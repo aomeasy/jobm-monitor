@@ -1,6 +1,8 @@
 import sys
 import pandas as pd
 import gspread
+from google.oauth2.service_account import Credentials
+import json
 import os
 from google.auth import default
 from selenium import webdriver
@@ -43,6 +45,175 @@ PROCESSING_ORDER = [
     }
 ]
 
+def test_google_sheet_authentication():
+    """
+    ทดสอบการเชื่อมต่อ Google Sheet และแสดงข้อมูลการตรวจสอบ
+    """
+    print("🔍 กำลังทดสอบ Google Sheet Authentication...")
+    
+    try:
+        # ตรวจสอบว่ามี environment variable หรือไม่
+        if not os.environ.get('GOOGLE_APPLICATION_CREDENTIALS'):
+            print("❌ GOOGLE_APPLICATION_CREDENTIALS environment variable ไม่ได้ตั้งค่า")
+            return False
+            
+        creds_file = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+        print(f"✅ พบ credentials file: {creds_file}")
+        
+        # ตรวจสอบไฟล์มีอยู่หรือไม่
+        if not os.path.exists(creds_file):
+            print(f"❌ ไฟล์ credentials ไม่มีอยู่: {creds_file}")
+            return False
+            
+        print("✅ ไฟล์ credentials พบแล้ว")
+        
+        # อ่านและตรวจสอบ JSON structure
+        try:
+            with open(creds_file, 'r') as f:
+                creds_data = json.load(f)
+                
+            # ตรวจสอบ required fields
+            required_fields = ['type', 'project_id', 'private_key_id', 'private_key', 'client_email', 'client_id']
+            missing_fields = [field for field in required_fields if field not in creds_data]
+            
+            if missing_fields:
+                print(f"❌ ขาดข้อมูลสำคัญใน JSON: {missing_fields}")
+                return False
+                
+            print("✅ JSON structure ถูกต้อง")
+            print(f"📧 Service Account Email: {creds_data['client_email']}")
+            print(f"🆔 Project ID: {creds_data['project_id']}")
+            print(f"🔑 Private Key ID: {creds_data['private_key_id'][:10]}...")
+            
+        except json.JSONDecodeError as e:
+            print(f"❌ ไฟล์ JSON มีปัญหา: {e}")
+            return False
+        except Exception as e:
+            print(f"❌ อ่านไฟล์ credentials ไม่ได้: {e}")
+            return False
+            
+        # ทดสอบสร้าง credentials
+        try:
+            credentials = Credentials.from_service_account_file(creds_file)
+            print("✅ สร้าง credentials สำเร็จ")
+        except Exception as e:
+            print(f"❌ สร้าง credentials ไม่ได้: {e}")
+            return False
+            
+        # ทดสอบการเชื่อมต่อ gspread
+        try:
+            client = gspread.authorize(credentials)
+            print("✅ เชื่อมต่อ gspread สำเร็จ")
+        except Exception as e:
+            print(f"❌ เชื่อมต่อ gspread ไม่ได้: {e}")
+            print("💡 ตรวจสอบว่าเปิดใช้งาน Google Sheets API แล้วหรือไม่")
+            return False
+            
+        # ทดสอบการเข้าถึง spreadsheet (ถ้ามี SHEET_ID)
+        sheet_id = os.environ.get('GOOGLE_SHEET_ID', 'YOUR_SHEET_ID_HERE')  # แก้ไขเป็น ID ของคุณ
+        if sheet_id and sheet_id != 'YOUR_SHEET_ID_HERE':
+            try:
+                spreadsheet = client.open_by_key(sheet_id)
+                print(f"✅ เข้าถึง spreadsheet สำเร็จ: {spreadsheet.title}")
+                
+                # ลองดู worksheets
+                worksheets = spreadsheet.worksheets()
+                print(f"📊 พบ {len(worksheets)} worksheets:")
+                for ws in worksheets:
+                    print(f"   - {ws.title} ({ws.row_count}x{ws.col_count})")
+                    
+            except gspread.SpreadsheetNotFound:
+                print(f"❌ ไม่พบ spreadsheet ID: {sheet_id}")
+                print("💡 ตรวจสอบว่า spreadsheet แชร์ให้ service account แล้วหรือไม่")
+                return False
+            except gspread.APIError as e:
+                print(f"❌ Google Sheets API Error: {e}")
+                return False
+            except Exception as e:
+                print(f"❌ เข้าถึง spreadsheet ไม่ได้: {e}")
+                return False
+                
+        print("🎉 Google Sheet Authentication ทำงานปกติ!")
+        return True
+        
+    except Exception as e:
+        print(f"❌ เกิดข้อผิดพลาดไม่ทราบสาเหตุ: {e}")
+        return False
+
+def get_existing_data_from_sheet():
+    """
+    ดึงข้อมูลเดิมจาก Google Sheet พร้อมการตรวจสอบที่ดีขึ้น
+    """
+    print("📊 กำลังดึงข้อมูลเดิมจาก Google Sheet...")
+    
+    try:
+        # ทดสอบ authentication ก่อน
+        if not test_google_sheet_authentication():
+            print("❌ Google Sheet Authentication ล้มเหลว - ข้ามการดึงข้อมูล")
+            return set()
+            
+        # ดำเนินการดึงข้อมูลตามปกติ
+        credentials = Credentials.from_service_account_file(
+            os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+        )
+        client = gspread.authorize(credentials)
+        
+        # แทนที่ด้วย Sheet ID ของคุณ
+        sheet_id = os.environ.get('GOOGLE_SHEET_ID', 'YOUR_SHEET_ID_HERE')
+        if sheet_id == 'YOUR_SHEET_ID_HERE':
+            print("⚠️ ยังไม่ได้ตั้งค่า GOOGLE_SHEET_ID environment variable")
+            return set()
+            
+        spreadsheet = client.open_by_key(sheet_id)
+        worksheet = spreadsheet.sheet1  # หรือระบุชื่อ worksheet
+        
+        # ดึงข้อมูลทั้งหมด
+        records = worksheet.get_all_records()
+        existing_job_nos = set()
+        
+        for record in records:
+            if 'Job No.' in record and record['Job No.']:
+                existing_job_nos.add(record['Job No.'].strip())
+                
+        print(f"✅ ดึงข้อมูลจาก Google Sheet สำเร็จ: {len(existing_job_nos)} รายการ")
+        return existing_job_nos
+        
+    except gspread.SpreadsheetNotFound:
+        print("❌ ไม่พบ spreadsheet - ตรวจสอบ Sheet ID และการแชร์")
+        return set()
+    except gspread.APIError as e:
+        print(f"❌ Google Sheets API Error: {e}")
+        if 'INVALID_ARGUMENT' in str(e):
+            print("💡 อาจเป็นปัญหาการ encoding - ตรวจสอบ base64 encoding")
+        return set()
+    except Exception as e:
+        print(f"❌ เกิดข้อผิดพลาดในการดึงข้อมูลจาก Google Sheet: {e}")
+        return set()
+
+# เพิ่มในส่วนต้นของ main() function
+def main():
+    print("🚀 เริ่มต้นโปรแกรม JobM Monitor")
+    print(f"⏰ เวลาเริ่มต้น: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    # ทดสอบ Google Sheet Authentication ก่อน
+    print("\n" + "="*50)
+    print("🔐 ทดสอบ Google Sheet Authentication")
+    print("="*50)
+    
+    auth_success = test_google_sheet_authentication()
+    
+    print("\n" + "="*50)
+    print("🔄 เริ่มการตรวจสอบ JobM")  
+    print("="*50)
+    
+    if not auth_success:
+        print("⚠️ Google Sheet Authentication ล้มเหลว - ระบบจะทำงานต่อแต่ไม่สามารถบันทึกข้อมูลได้")
+        print("💡 ตรวจสอب:")
+        print("   1. base64 encoding ของ service account JSON")
+        print("   2. Google Sheets API เปิดใช้งานแล้วหรือไม่")
+        print("   3. Google Sheet แชร์ให้ service account แล้วหรือไม่")
+
+        
 def send_telegram_message(message):
     """Sends a message to the specified Telegram chat."""
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -537,3 +708,13 @@ if __name__ == "__main__":
         print(f"✅ GitHub Actions job เสร็จสิ้น - รอ schedule ถัดไป")
     else:
         print(f"🔚 โปรแกรมสิ้นสุดการทำงาน")
+
+# หากต้องการทดสอบแยกต่างหาก
+if __name__ == "__main__":
+    # ทดสอบ authentication อย่างเดียว
+    if len(sys.argv) > 1 and sys.argv[1] == "test-auth":
+        test_google_sheet_authentication()
+    else:
+        main()
+
+
