@@ -356,7 +356,9 @@ def get_all_sheet_data(spreadsheet_url, sheet_name):
     """ดึงข้อมูลทั้งหมดจาก Google Sheet"""
     try:
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds, project = default(scopes=scope)
+        credentials = Credentials.from_service_account_file(
+            os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+        )
         
         client = gspread.authorize(creds)
         spreadsheet = client.open_by_url(spreadsheet_url)
