@@ -24,8 +24,8 @@ from datetime import datetime
 import json
 
 # --- Configuration ---
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/176UvX_WAHQvWtbqIdvZu4Wo91U_6YG3GuBSFjt8IDYk/edit#gid=687082847"
-GOOGLE_SHEET_NAME = "ปิดงาน"
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/176UvX_WAHQvWtbqIdvZu4Wo91U_6YG3GuBSFjt8IDYk/edit?gid=0#gid=0"
+GOOGLE_SHEET_NAME = "ชีต1" 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
