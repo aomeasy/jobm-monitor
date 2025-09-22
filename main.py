@@ -487,18 +487,44 @@ def process_tab_data(tab_data, tab_config, existing_job_numbers):
                 new_jobs.append(row)
                 print(f"🆕 {tab_name}: พบงานใหม่ {job_no}")
                 
-        elif action == 'UPDATE_STATUS':
-            # Tab 15: ตรวจสอบและดำเนินการ
-            if job_no in existing_job_numbers:
-                # มีอยู่แล้ว → อัปเดตสถานะ
-                updated_jobs.append({'job_no': job_no, 'new_status': status})
-                print(f"🔄 {tab_name}: อัปเดตสถานะ {job_no} เป็น '{status}'")
-            else:
-                # ไม่มี → เพิ่มใหม่
-                new_jobs.append(row)
-                print(f"🆕 {tab_name}: เพิ่มงานใหม่ {job_no} (จากปิดงาน)")
-                # เพิ่มลงใน existing_job_numbers เพื่อป้องกันการซ้ำในรอบเดียวกัน
-                existing_job_numbers.add(job_no)
+    elif action == 'UPDATE_STATUS':
+        # Tab 15: ตรวจสอบและดำเนินการ
+        if job_no in existing_job_numbers:
+            # มีอยู่แล้ว → อัปเดตสถานะ
+            updated_jobs.append({'job_no': job_no, 'new_status': status})
+            print(f"🔄 {tab_name}: อัปเดตสถานะ {job_no} เป็น '{status}'")
+            
+            # ส่งการแจ้งเตือนปิดงาน
+            try:
+                telegram_message = (
+                    f"<b>✅ แจ้งปิดงาน</b>\n"
+                    f"<b>🏷️ Job No.:</b> {job_no}\n"
+                    f"<b>📊 สถานะ:</b> {status}\n"
+                    f"<b>⏰ เวลา:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                )
+                send_telegram_message(telegram_message)
+            except Exception as e:
+                print(f"⚠️ ส่งแจ้งเตือนไม่ได้สำหรับ Job No. {job_no}: {e}")
+        else:
+            # ไม่มี → เพิ่มใหม่
+            new_jobs.append(row)
+            print(f"🆕 {tab_name}: เพิ่มงานใหม่ {job_no} (จากปิดงาน)")
+            
+            # ส่งการแจ้งเตือนงานใหม่
+            try:
+                center_name = row.get('ศูนย์ที่รับ', 'ไม่ระบุศูนย์')
+                subject = row.get('เรื่องที่แจ้ง', 'ไม่ระบุเรื่อง')
+                
+                telegram_message = (
+                    f"<b>🔔 แจ้งงานใหม่</b>\n"
+                    f"<b>📋 ประเภท:</b> {status} (ปิดงานรอตรวจสอบ)\n"
+                    f"<b>🏢 ศูนย์:</b> {center_name}\n"
+                    f"<b>📝 เรื่อง:</b> {subject}\n"
+                    f"<b>🏷️ Job No.:</b> {job_no}"
+                )
+                send_telegram_message(telegram_message)
+            except Exception as e:
+                print(f"⚠️ ส่งแจ้งเตือนไม่ได้สำหรับ Job No. {job_no}: {e}")
     
     return new_jobs, updated_jobs 
 
