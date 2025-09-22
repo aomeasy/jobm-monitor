@@ -1,0 +1,82 @@
+# .github/workflows/jobm-monitor.yml
+name: 🤖 JobM Monitor
+
+on:
+  schedule:
+    # รันทุกชั่วโมง ตั้งแต่ 8:00-17:00 น. วันจันทร์-ศุกร์ (เวลาไทย)
+    - cron: '0 1-10 * * 1-5'  # 08:00-17:00 ICT = 01:00-10:00 UTC
+  
+  workflow_dispatch:  # สามารถรันด้วยตนเองได้
+    inputs:
+      test_mode:
+        description: 'Run in test mode'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  TZ: Asia/Bangkok
+
+jobs:
+  monitor:
+    name: 🔍 Monitor JobM
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+    - name: 📥 Checkout Code
+      uses: actions/checkout@v4
+
+    - name: 🐍 Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: 🌐 Install Chrome
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y google-chrome-stable
+
+    - name: 📦 Install Dependencies
+      run: |
+        pip install --no-cache-dir -r requirements.txt
+
+    - name: 🔑 Setup Google Credentials
+      env:
+        GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      run: |
+        echo "$GOOGLE_SERVICE_ACCOUNT_JSON" | base64 -d > service_account.json
+        echo "GOOGLE_APPLICATION_CREDENTIALS=service_account.json" >> $GITHUB_ENV
+
+    - name: 🚀 Run JobM Monitor
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        TEST_MODE: ${{ github.event.inputs.test_mode || 'false' }}
+      run: |
+        echo "🕐 Current time: $(date)"
+        echo "🌍 Timezone: $TZ"
+        
+        if [ "$TEST_MODE" = "true" ]; then
+          echo "🧪 Running in test mode..."
+          python test_monitor.py
+        else
+          echo "🤖 Running JobM Monitor..."
+          python main.py
+        fi
+
+    - name: 🧹 Cleanup
+      if: always()
+      run: |
+        rm -f service_account.json
+        rm -f *.png
+
+    - name: 📊 Upload Error Logs
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: error-logs-${{ github.run_number }}
+        path: |
+          *.png
+          *.log
+        retention-days: 3
