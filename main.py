@@ -487,7 +487,7 @@ def process_tab_data(tab_data, tab_config, existing_job_numbers):
             # Tab 13 & 14: เพิ่มใหม่ถ้าไม่พบ
             if job_no not in existing_job_numbers:
                 new_jobs.append(row)
-                print(f"🆕 {tab_name}: พบงานใหม่ {job_no}")
+                print(f"🆕 {tab_name}: พบงานใหม่ {job_no}") 
                 
         elif action == 'UPDATE_STATUS':  # <- ย้ายเข้ามาใน loop
             # Tab 15: ตรวจสอบและดำเนินการ
