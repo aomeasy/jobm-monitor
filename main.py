@@ -487,45 +487,20 @@ def process_tab_data(tab_data, tab_config, existing_job_numbers):
                 new_jobs.append(row)
                 print(f"🆕 {tab_name}: พบงานใหม่ {job_no}")
                 
-                # ส่งการแจ้งเตือน
-                try:
-                    center_name = row.get('ศูนย์ที่รับ', 'ไม่ระบุศูนย์')
-                    subject = row.get('เรื่องที่แจ้ง', 'ไม่ระบุเรื่อง')
-                    
-                    telegram_message = (
-                        f"<b>🔔 แจ้งงานใหม่</b>\n"
-                        f"<b>📋 ประเภท:</b> {status}\n"
-                        f"<b>🏢 ศูนย์:</b> {center_name}\n"
-                        f"<b>📝 เรื่อง:</b> {subject}\n"
-                        f"<b>🏷️ Job No.:</b> {job_no}"
-                    )
-                    send_telegram_message(telegram_message)
-                except Exception as e:
-                    print(f"⚠️ ส่งแจ้งเตือนไม่ได้สำหรับ Job No. {job_no}: {e}")
-            else:
-                print(f"⚠️ {tab_name}: Job No. {job_no} มีอยู่แล้ว")
-                
         elif action == 'UPDATE_STATUS':
-            # Tab 15: อัปเดตสถานะเป็น "ปิดงาน"
+            # Tab 15: ตรวจสอบและดำเนินการ
             if job_no in existing_job_numbers:
+                # มีอยู่แล้ว → อัปเดตสถานะ
                 updated_jobs.append({'job_no': job_no, 'new_status': status})
                 print(f"🔄 {tab_name}: อัปเดตสถานะ {job_no} เป็น '{status}'")
-                
-                # ส่งการแจ้งเตือนปิดงาน
-                try:
-                    telegram_message = (
-                        f"<b>✅ แจ้งปิดงาน</b>\n"
-                        f"<b>🏷️ Job No.:</b> {job_no}\n"
-                        f"<b>📊 สถานะ:</b> {status}\n"
-                        f"<b>⏰ เวลา:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-                    )
-                    send_telegram_message(telegram_message)
-                except Exception as e:
-                    print(f"⚠️ ส่งแจ้งเตือนไม่ได้สำหรับ Job No. {job_no}: {e}")
             else:
-                print(f"⚠️ {tab_name}: Job No. {job_no} ไม่พบในระบบ ไม่สามารถปิดงานได้")
+                # ไม่มี → เพิ่มใหม่
+                new_jobs.append(row)
+                print(f"🆕 {tab_name}: เพิ่มงานใหม่ {job_no} (จากปิดงาน)")
+                # เพิ่มลงใน existing_job_numbers เพื่อป้องกันการซ้ำในรอบเดียวกัน
+                existing_job_numbers.add(job_no)
     
-    return new_jobs, updated_jobs
+    return new_jobs, updated_jobs 
 
 def generate_summary_report(results):
     """สร้างรายงานสรุปผลการทำงาน"""
@@ -627,44 +602,44 @@ if __name__ == "__main__":
                     # ประมวลผลตาม logic
                     new_jobs, updated_jobs = process_tab_data(tab_data, tab_config, existing_job_numbers)
                     
-                    processing_results[tab_config['tab']] = {
-                        'new_jobs': new_jobs,
-                        'updated_jobs': updated_jobs,
-                        'tab_config': tab_config
-                    }
+                processing_results[tab_config['tab']] = {
+                    'new_jobs': new_jobs,
+                    'updated_jobs': updated_jobs,
+                    'tab_config': tab_config
+                }
+                
+                # บันทึกงานใหม่ลง Google Sheet (ทั้ง ADD_NEW และ UPDATE_STATUS ที่ไม่พบ)
+                if new_jobs:
+                    new_jobs_df = pd.DataFrame(new_jobs)
                     
-                    # บันทึกงานใหม่ลง Google Sheet
-                    if new_jobs:
-                        new_jobs_df = pd.DataFrame(new_jobs)
-                        
-                        if existing_data.empty:
-                            # ถ้า Sheet ว่าง ให้เพิ่ม header ด้วย
-                            header_df = pd.DataFrame([new_jobs_df.columns.tolist()])
-                            combined_df = pd.concat([header_df, new_jobs_df], ignore_index=True)
-                            append_rows_to_google_sheet(combined_df, GOOGLE_SHEET_URL, GOOGLE_SHEET_NAME)
-                        else:
-                            # เรียงคอลัมน์ให้ตรงกับ Sheet เดิม
-                            try:
-                                new_jobs_ordered = new_jobs_df.reindex(columns=existing_data.columns, fill_value='')
-                                append_rows_to_google_sheet(new_jobs_ordered, GOOGLE_SHEET_URL, GOOGLE_SHEET_NAME)
-                            except Exception as e:
-                                print(f"⚠️ ปัญหาการเรียงคอลัมน์: {e}")
-                                append_rows_to_google_sheet(new_jobs_df, GOOGLE_SHEET_URL, GOOGLE_SHEET_NAME)
-                        
-                        # อัปเดต existing_job_numbers สำหรับ tab ถัดไป
-                        for job in new_jobs:
-                            if 'Job No.' in job.index and pd.notna(job['Job No.']):
-                                existing_job_numbers.add(str(job['Job No.']).strip())
+                    # เรียงคอลัมน์ให้ตรงกับ Sheet เดิม
+                    if not existing_data.empty:
+                        try:
+                            new_jobs_ordered = new_jobs_df.reindex(columns=existing_data.columns, fill_value='')
+                            append_rows_to_google_sheet(new_jobs_ordered, GOOGLE_SHEET_URL, GOOGLE_SHEET_NAME)
+                        except Exception as e:
+                            print(f"⚠️ ปัญหาการเรียงคอลัมน์: {e}")
+                            append_rows_to_google_sheet(new_jobs_df, GOOGLE_SHEET_URL, GOOGLE_SHEET_NAME)
+                    else:
+                        # ถ้า Sheet ว่าง
+                        header_df = pd.DataFrame([new_jobs_df.columns.tolist()])
+                        combined_df = pd.concat([header_df, new_jobs_df], ignore_index=True)
+                        append_rows_to_google_sheet(combined_df, GOOGLE_SHEET_URL, GOOGLE_SHEET_NAME)
                     
-                    # อัปเดตสถานะงานที่ปิด
-                    if updated_jobs:
-                        for update_info in updated_jobs:
-                            update_job_status_in_sheet(
-                                update_info['job_no'], 
-                                update_info['new_status'],
-                                GOOGLE_SHEET_URL, 
-                                GOOGLE_SHEET_NAME
-                            )
+                    # อัปเดต existing_job_numbers
+                    for job in new_jobs:
+                        if 'Job No.' in job.index and pd.notna(job['Job No.']):
+                            existing_job_numbers.add(str(job['Job No.']).strip())
+                
+                # อัปเดตสถานะงานที่ปิด
+                if updated_jobs:
+                    for update_info in updated_jobs:
+                        update_job_status_in_sheet(
+                            update_info['job_no'], 
+                            update_info['new_status'],
+                            GOOGLE_SHEET_URL, 
+                            GOOGLE_SHEET_NAME
+                        )
                 else:
                     print(f"❌ ไม่สามารถดึงข้อมูลจาก Tab {tab_config['tab']} ได้")
                     processing_results[tab_config['tab']] = {
