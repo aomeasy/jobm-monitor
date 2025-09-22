@@ -18,7 +18,7 @@ import time
 from datetime import datetime
 
 # --- Configuration ---
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/176UvX_WAHQvWtbqIdvZu4Wo91U_6YG3GuBSFjt8IDYk/edit?gid=0#gid=0"
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1uEbsT3PZ8tdwiU1Xga_hS6uPve2H74xD5wUci0EcT0Q/edit?gid=0#gid=0"
 GOOGLE_SHEET_NAME = "ชีต1"
 TELEGRAM_BOT_TOKEN = "7978005713:AAHoMsNl_cyT3SkKLDq139YuTzGAnStfl4"
 TELEGRAM_CHAT_ID = "8028926248"
