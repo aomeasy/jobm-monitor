@@ -20,13 +20,13 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      # ติดตั้ง Chrome (Chrome for Testing) แบบเป็นทางการ
       - name: Setup Chrome
         id: chrome
         uses: browser-actions/setup-chrome@v1
         with:
-          chrome-version: stable   # หรือระบุเวอร์ชันเฉพาะได้ เช่น '140.0.7339.185'
-          install-chromedriver: true  # จะลง chromedriver ที่ตรงเวอร์ชันมาให้ด้วย
+          chrome-version: stable
+          install-chromedriver: true
+
 
       - name: Show Chrome info
         run: |
