@@ -63,28 +63,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # ⬇️ decode base64 → credentials.json + validate
-      - name: Create Google Service Account credentials (base64 → file)
-        shell: bash
+      - name: Create Google Service Account credentials (raw JSON)
         run: |
-          set -euo pipefail
-          if [ -z "${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}" ]; then
-            echo "❌ Secret GOOGLE_SERVICE_ACCOUNT_JSON is empty"
-            exit 1
-          fi
-          echo "${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}" | base64 -d > credentials.json
+          printf '%s' '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > credentials.json
           python - <<'PY'
           import json, pathlib, sys
           p = pathlib.Path("credentials.json")
           data = p.read_text(encoding="utf-8")
-          if not data.strip():
-              sys.exit("credentials.json is empty after base64 decode")
           try:
               json.loads(data)
           except Exception as e:
               sys.exit(f"credentials.json is not valid JSON: {e}")
-          print("✅ credentials.json decoded and valid")
+          print("✅ credentials.json written and valid")
           PY
+
 
         
 
