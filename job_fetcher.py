@@ -67,9 +67,24 @@ def parse_row(row):
         print(f"⚠️ Error parsing row: {e}")
         return None
 
-def normalize_job_no(job_no):
+def normalize_job_no(job_no: str) -> str:
+    if not job_no:
+        return ""
     return job_no.split("/")[0].strip().lower()
 
+def adjust_cols_for_sheet(job: list) -> list:
+    """
+    ใช้กับข้อมูลจาก tab=15 เท่านั้น
+    - Job No: ตัดข้อความหลัง '/' ออก
+    - ศูนย์ที่แจ้ง (col C) -> เว้นว่าง
+    - ขยับค่าเดิมไปทางขวา 1 ช่อง
+    """
+    arr = (job or [])[:]
+    while len(arr) < 7:
+        arr.append("")
+    # โครงใหม่: [A(JobNo), B, ''(C), D<-เดิมC, E<-เดิมD, F<-เดิมE, G<-เดิมF]
+    return [clean_job_no_display(arr[0]), arr[1], "", arr[2], arr[3], arr[4], arr[5]]
+    
 def _detect_chrome_binary():
     # ลำดับการหา Chrome binary
     # 1) จาก env CHROME_BIN (มาจาก setup-chrome action)
@@ -364,12 +379,6 @@ def setup_google_sheets():
 
 def update_google_sheets(sheet, new_jobs, closed_job_nos,
                          waiting_jobs=None, closed_jobs_full=None):
-    """
-    - new_jobs: จาก tab=13 (ของเดิม)
-    - closed_job_nos: set() จาก tab=15 (ของเดิม ใช้เพื่ออัปเดตสถานะงานที่มีอยู่)
-    - waiting_jobs: list จาก tab=14 (ถ้ายังไม่มีในชีต ให้เพิ่มเป็น 'รอแจ้ง')
-    - closed_jobs_full: list จาก tab=15 (ถ้ายังไม่มีในชีต ให้เพิ่มเป็น 'ปิดงาน')
-    """
     waiting_jobs = waiting_jobs or []
     closed_jobs_full = closed_jobs_full or []
 
@@ -390,7 +399,7 @@ def update_google_sheets(sheet, new_jobs, closed_job_nos,
         new_added = 0
         updated = 0
 
-        # ====== ของเดิม: เพิ่มจาก new_jobs (tab=13) และอัปเดตสถานะถ้าพบว่าอยู่ใน closed_job_nos ======
+        # ====== tab=13 ======
         for job in new_jobs:
             if not job or len(job) < 7:
                 continue
@@ -407,7 +416,6 @@ def update_google_sheets(sheet, new_jobs, closed_job_nos,
                 except Exception as e:
                     print(f"❌ Error adding job {job_no} from tab13: {e}")
             elif status == "ปิดงาน":
-                # อัปเดตสถานะเดิมให้เป็นปิดงาน
                 try:
                     for i, row in enumerate(sheet_data[1:], start=2):
                         if row and len(row) > 0 and normalize_job_no(row[0]) == job_no:
@@ -420,7 +428,7 @@ def update_google_sheets(sheet, new_jobs, closed_job_nos,
                 except Exception as e:
                     print(f"❌ Error updating job {job_no} from tab13: {e}")
 
-        # ====== ใหม่: เติมจาก tab=14 ถ้ายังไม่มี → สถานะ 'รอแจ้ง' ======
+        # ====== tab=14 ======
         for job in waiting_jobs:
             if not job or len(job) < 7:
                 continue
@@ -435,14 +443,16 @@ def update_google_sheets(sheet, new_jobs, closed_job_nos,
                 except Exception as e:
                     print(f"❌ Error adding job {job_no} from tab14: {e}")
 
-        # ====== ใหม่: เติมจาก tab=15 ถ้ายังไม่มี → สถานะ 'ปิดงาน' ======
+        # ====== tab=15 ======
         for job in closed_jobs_full:
             if not job or len(job) < 7:
                 continue
             job_no = normalize_job_no(job[0])
+            job_for_sheet = adjust_cols_for_sheet(job)  # ✅ ใช้เฉพาะ tab=15
+
             if job_no not in existing:
                 try:
-                    sheet.append_row(job + ["ปิดงาน"], value_input_option="USER_ENTERED")
+                    sheet.append_row(job_for_sheet + ["ปิดงาน"], value_input_option="USER_ENTERED")
                     print(f"✅ Added (tab15): {job_no} -> ปิดงาน")
                     new_added += 1
                     existing.add(job_no)
@@ -450,7 +460,6 @@ def update_google_sheets(sheet, new_jobs, closed_job_nos,
                 except Exception as e:
                     print(f"❌ Error adding job {job_no} from tab15: {e}")
             else:
-                # ถ้ามีอยู่แล้ว แต่อยากการันตีสถานะปิดงาน (ปล่อยได้ถ้าไม่ต้องการ)
                 try:
                     for i, row in enumerate(sheet_data[1:], start=2):
                         if row and len(row) > 0 and normalize_job_no(row[0]) == job_no:
