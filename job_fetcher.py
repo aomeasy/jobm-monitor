@@ -224,6 +224,9 @@ def setup_google_sheets():
     from gspread.exceptions import APIError, SpreadsheetNotFound
 
     print("📄 Connecting to Google Sheets...")
+    print(f"🔍 Env has GOOGLE_SHEET_KEY? {bool(os.getenv('GOOGLE_SHEET_KEY'))}")
+    print(f"🔍 Env has GOOGLE_SHEET_URL? {bool(os.getenv('GOOGLE_SHEET_URL'))}")
+
 
     cred_path = pathlib.Path("credentials.json")
     if not cred_path.exists() or cred_path.stat().st_size == 0:
