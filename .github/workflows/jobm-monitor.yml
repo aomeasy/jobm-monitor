@@ -2,109 +2,66 @@ name: Job Management Automation
 
 on:
   schedule:
-    # รันทุกชั่วโมงในวันจันทร์-ศุกร์ (UTC+0, ต้องปรับตาม timezone ที่ต้องการ)
-    # เวลาไทย UTC+7 ดังนั้น 0-16 UTC = 7-23 เวลาไทย (จ-ศ)
-    - cron: '0 0-16 * * 1-5'
-  workflow_dispatch: # อนุญาตให้รันด้วยตนเองได้
+    # รันทุกชั่วโมง จันทร์-ศุกร์ (UTC) — ครอบคลุมทั้งวันไทยได้
+    - cron: '0 * * * 1-5'
+  workflow_dispatch:
 
 jobs:
   fetch-jobs:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-    
-    - name: Setup Chrome and ChromeDriver
-      run: |
-        # Install Chrome (already installed, just update)
-        sudo apt-get update
-        sudo apt-get install -y google-chrome-stable
-        
-        # Get Chrome version and determine compatible ChromeDriver
-        CHROME_VERSION=$(google-chrome --version | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+")
-        CHROME_MAJOR_VERSION=$(echo $CHROME_VERSION | cut -d. -f1)
-        echo "Chrome version: $CHROME_VERSION"
-        echo "Chrome major version: $CHROME_MAJOR_VERSION"
-        
-        # Install ChromeDriver using the new Chrome for Testing API
-        sudo apt-get install -y unzip wget jq
-        
-        # Try to get the latest stable version for this Chrome major version
-        echo "Attempting to download ChromeDriver..."
-        
-        # Method 1: Try Chrome for Testing API
-        if curl -s "https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json" > /tmp/versions.json; then
-          echo "Using Chrome for Testing API..."
-          # Find a compatible version
-          CHROMEDRIVER_VERSION=$(jq -r ".versions[] | select(.version | startswith(\"$CHROME_MAJOR_VERSION.\")) | .version" /tmp/versions.json | tail -1)
-          if [ ! -z "$CHROMEDRIVER_VERSION" ]; then
-            echo "Found compatible ChromeDriver version: $CHROMEDRIVER_VERSION"
-            wget -O /tmp/chromedriver.zip "https://storage.googleapis.com/chrome-for-testing-public/$CHROMEDRIVER_VERSION/linux64/chromedriver-linux64.zip"
-          fi
-        fi
-        
-        # Method 2: Fallback to known working versions if the above fails
-        if [ ! -f /tmp/chromedriver.zip ]; then
-          echo "Fallback: trying known working versions..."
-          for VERSION in "129.0.6668.89" "128.0.6613.84" "127.0.6533.88" "126.0.6478.126" "125.0.6422.141"; do
-            echo "Trying ChromeDriver version: $VERSION"
-            if wget -O /tmp/chromedriver.zip "https://storage.googleapis.com/chrome-for-testing-public/$VERSION/linux64/chromedriver-linux64.zip" 2>/dev/null; then
-              echo "Successfully downloaded ChromeDriver version: $VERSION"
-              break
-            fi
-          done
-        fi
-        
-        # Method 3: Use Ubuntu package if all else fails
-        if [ ! -f /tmp/chromedriver.zip ]; then
-          echo "Installing ChromeDriver from Ubuntu packages..."
-          sudo apt-get install -y chromium-chromedriver
-          sudo ln -sf /usr/bin/chromedriver /usr/local/bin/chromedriver
-        else
-          # Extract and install downloaded ChromeDriver
-          echo "Installing downloaded ChromeDriver..."
-          cd /tmp
-          unzip -q chromedriver.zip
-          # Handle different archive structures
-          if [ -f chromedriver-linux64/chromedriver ]; then
-            sudo mv chromedriver-linux64/chromedriver /usr/local/bin/
-          elif [ -f chromedriver ]; then
-            sudo mv chromedriver /usr/local/bin/
-          fi
-          sudo chmod +x /usr/local/bin/chromedriver
-        fi
-        
-        # Verify installation
-        echo "Verification:"
-        echo "Chrome version:"
-        google-chrome --version || echo "Chrome not found"
-        echo "ChromeDriver version:"
-        chromedriver --version || echo "ChromeDriver not found"
-        echo "ChromeDriver location:"
-        which chromedriver || echo "ChromeDriver not in PATH"
-        ls -la /usr/local/bin/chromedriver* || echo "No chromedriver in /usr/local/bin"
-    
-    - name: Create Google Service Account credentials
-      run: |
-        echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > credentials.json
-    
-    - name: Run job fetcher
-      run: python job_fetcher.py
-      env:
-        GOOGLE_SHEET_URL: ${{ vars.GOOGLE_SHEET_URL || 'https://docs.google.com/spreadsheets/d/1uEbsT3PZ8tdwiU1Xga_hS6uPve2H74xD5wUci0EcT0Q/edit?gid=0#gid=0' }}
-        GOOGLE_SHEET_NAME: ${{ vars.GOOGLE_SHEET_NAME || 'ชีต1' }}
-    
-    - name: Clean up credentials
-      if: always()
-      run: rm -f credentials.json
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      # ติดตั้ง Chrome (Chrome for Testing) แบบเป็นทางการ
+      - name: Setup Chrome
+        id: chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable   # หรือระบุเวอร์ชันเฉพาะได้ เช่น '140.0.7339.185'
+          install-chromedriver: true  # จะลง chromedriver ที่ตรงเวอร์ชันมาให้ด้วย
+
+      - name: Show Chrome info
+        run: |
+          echo "Chrome path: ${{ steps.chrome.outputs.chrome-path }}"
+          echo "Chromedriver path: ${{ steps.chrome.outputs.chromedriver-path }}"
+          ${{ steps.chrome.outputs.chrome-path }} --version || true
+          ${{ steps.chrome.outputs.chromedriver-path }} --version || true
+
+      - name: Install system deps for headless Chrome
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xvfb libnss3 libgconf-2-4 libxi6 libgdk-pixbuf2.0-0 libgtk-3-0 \
+            libxss1 libasound2 libxrandr2 libgbm1 fonts-liberation \
+            xdg-utils ca-certificates
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create Google Service Account credentials
+        run: |
+          printf '%s' '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > credentials.json
+
+      - name: Run job fetcher
+        env:
+          # บอกตำแหน่ง Chrome / Chromedriver ให้โค้ดรู้ (เผื่อ fallback)
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+          CHROMEDRIVER: ${{ steps.chrome.outputs.chromedriver-path }}
+          GOOGLE_SHEET_URL: ${{ vars.GOOGLE_SHEET_URL || 'https://docs.google.com/spreadsheets/d/1uEbsT3PZ8tdwiU1Xga_hS6uPve2H74xD5wUci0EcT0Q/edit?gid=0#gid=0' }}
+          GOOGLE_SHEET_NAME: ${{ vars.GOOGLE_SHEET_NAME || 'ชีต1' }}
+        run: |
+          python job_fetcher.py
+
+      - name: Clean up credentials
+        if: always()
+        run: rm -f credentials.json
