@@ -93,3 +93,12 @@ jobs:
       - name: Clean up credentials
         if: always()
         run: rm -f credentials.json
+
+      - name: Debug env
+        run: |
+          echo "GOOGLE_SHEET_KEY length: ${#GOOGLE_SHEET_KEY:-0}"
+          echo "GOOGLE_SHEET_URL set? $([ -n "${GOOGLE_SHEET_URL:-}" ] && echo yes || echo no)"
+        env:
+          GOOGLE_SHEET_KEY: ${{ vars.GOOGLE_SHEET_KEY }}
+          GOOGLE_SHEET_URL: ${{ vars.GOOGLE_SHEET_URL }}
+
