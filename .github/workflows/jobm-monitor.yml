@@ -27,42 +27,73 @@ jobs:
     
     - name: Setup Chrome and ChromeDriver
       run: |
-        # Install Chrome using official method
-        sudo apt-get update
-        sudo apt-get install -y wget gnupg
-        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-        sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
+        # Install Chrome (already installed, just update)
         sudo apt-get update
         sudo apt-get install -y google-chrome-stable
         
-        # Install ChromeDriver directly without version checking
-        sudo apt-get install -y unzip
+        # Get Chrome version and determine compatible ChromeDriver
+        CHROME_VERSION=$(google-chrome --version | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+")
+        CHROME_MAJOR_VERSION=$(echo $CHROME_VERSION | cut -d. -f1)
+        echo "Chrome version: $CHROME_VERSION"
+        echo "Chrome major version: $CHROME_MAJOR_VERSION"
         
-        # Use a known working ChromeDriver version
-        CHROMEDRIVER_VERSION="114.0.5735.90"
-        echo "Installing ChromeDriver version: $CHROMEDRIVER_VERSION"
+        # Install ChromeDriver using the new Chrome for Testing API
+        sudo apt-get install -y unzip wget jq
         
-        # Try multiple download sources
-        wget -O /tmp/chromedriver.zip "https://chromedriver.storage.googleapis.com/${CHROMEDRIVER_VERSION}/chromedriver_linux64.zip" || \
-        wget -O /tmp/chromedriver.zip "https://github.com/electron/electron/releases/download/v25.3.0/chromedriver-v25.3.0-linux-x64.zip" || \
-        {
-          echo "Downloading latest stable ChromeDriver..."
-          LATEST_STABLE=$(curl -s https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_STABLE)
-          wget -O /tmp/chromedriver.zip "https://storage.googleapis.com/chrome-for-testing-public/${LATEST_STABLE}/linux64/chromedriver-linux64.zip"
-        }
+        # Try to get the latest stable version for this Chrome major version
+        echo "Attempting to download ChromeDriver..."
         
-        # Extract and install
-        sudo unzip -j /tmp/chromedriver.zip -d /usr/local/bin/
-        sudo chmod +x /usr/local/bin/chromedriver*
-        sudo ln -sf /usr/local/bin/chromedriver* /usr/local/bin/chromedriver
+        # Method 1: Try Chrome for Testing API
+        if curl -s "https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json" > /tmp/versions.json; then
+          echo "Using Chrome for Testing API..."
+          # Find a compatible version
+          CHROMEDRIVER_VERSION=$(jq -r ".versions[] | select(.version | startswith(\"$CHROME_MAJOR_VERSION.\")) | .version" /tmp/versions.json | tail -1)
+          if [ ! -z "$CHROMEDRIVER_VERSION" ]; then
+            echo "Found compatible ChromeDriver version: $CHROMEDRIVER_VERSION"
+            wget -O /tmp/chromedriver.zip "https://storage.googleapis.com/chrome-for-testing-public/$CHROMEDRIVER_VERSION/linux64/chromedriver-linux64.zip"
+          fi
+        fi
+        
+        # Method 2: Fallback to known working versions if the above fails
+        if [ ! -f /tmp/chromedriver.zip ]; then
+          echo "Fallback: trying known working versions..."
+          for VERSION in "129.0.6668.89" "128.0.6613.84" "127.0.6533.88" "126.0.6478.126" "125.0.6422.141"; do
+            echo "Trying ChromeDriver version: $VERSION"
+            if wget -O /tmp/chromedriver.zip "https://storage.googleapis.com/chrome-for-testing-public/$VERSION/linux64/chromedriver-linux64.zip" 2>/dev/null; then
+              echo "Successfully downloaded ChromeDriver version: $VERSION"
+              break
+            fi
+          done
+        fi
+        
+        # Method 3: Use Ubuntu package if all else fails
+        if [ ! -f /tmp/chromedriver.zip ]; then
+          echo "Installing ChromeDriver from Ubuntu packages..."
+          sudo apt-get install -y chromium-chromedriver
+          sudo ln -sf /usr/bin/chromedriver /usr/local/bin/chromedriver
+        else
+          # Extract and install downloaded ChromeDriver
+          echo "Installing downloaded ChromeDriver..."
+          cd /tmp
+          unzip -q chromedriver.zip
+          # Handle different archive structures
+          if [ -f chromedriver-linux64/chromedriver ]; then
+            sudo mv chromedriver-linux64/chromedriver /usr/local/bin/
+          elif [ -f chromedriver ]; then
+            sudo mv chromedriver /usr/local/bin/
+          fi
+          sudo chmod +x /usr/local/bin/chromedriver
+        fi
         
         # Verify installation
+        echo "Verification:"
         echo "Chrome version:"
         google-chrome --version || echo "Chrome not found"
         echo "ChromeDriver version:"
         chromedriver --version || echo "ChromeDriver not found"
         echo "ChromeDriver location:"
         which chromedriver || echo "ChromeDriver not in PATH"
+        ls -la /usr/local/bin/chromedriver* || echo "No chromedriver in /usr/local/bin"
     
     - name: Create Google Service Account credentials
       run: |
