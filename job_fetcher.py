@@ -218,7 +218,7 @@ def fetch_closed_jobs(driver):
 
 def setup_google_sheets():
     """Connect to Google Sheets using a Service Account (modern auth)."""
-    import json, pathlib, os
+    import re, json, pathlib, os
     import gspread
     from google.oauth2.service_account import Credentials as GCreds
     from gspread.exceptions import APIError, SpreadsheetNotFound
@@ -229,13 +229,10 @@ def setup_google_sheets():
     if not cred_path.exists() or cred_path.stat().st_size == 0:
         raise RuntimeError("credentials.json missing or empty")
 
-    # ใช้ scopes รุ่นใหม่
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive",
     ]
-
-    # โหลด credential (raw JSON)
     data = json.loads(cred_path.read_text(encoding="utf-8"))
     client_email = data.get("client_email")
     print(f"🔐 Service Account: {client_email}")
@@ -243,19 +240,25 @@ def setup_google_sheets():
     creds = GCreds.from_service_account_info(data, scopes=scopes)
     gc = gspread.authorize(creds)
 
-    # แนะนำให้เปิดด้วย key (กัน URL แปลก ๆ) 
-    url = os.getenv(
-        "GOOGLE_SHEET_URL",
-        "https://docs.google.com/spreadsheets/d/1uEbsT3PZ8tdwiU1Xga_hS6uPve2H74xD5wUci0EcT0Q/edit?gid=0#gid=0",
-    )
+    # ----- รับค่า target -----
     sheet_name = os.getenv("GOOGLE_SHEET_NAME", "ชีต1")
+    # ให้สิทธิ์ส่ง key ตรง ๆ มาก่อน
+    key = os.getenv("GOOGLE_SHEET_KEY", "").strip()
 
-    # ดึง key จาก URL
-    # รูปแบบ: https://docs.google.com/spreadsheets/d/<KEY>/edit...
-    try:
-        key = url.split("/d/")[1].split("/")[0]
-    except Exception:
-        raise RuntimeError("Cannot parse spreadsheet key from GOOGLE_SHEET_URL")
+    # ถ้าไม่ส่ง key ให้พยายามอ่านจาก URL (env → ค่าคงที่ด้านบน)
+    url_env = os.getenv("GOOGLE_SHEET_URL", "").strip()
+    url_fallback = GOOGLE_SHEET_URL  # ค่าคงที่บนสุดของไฟล์
+    url = url_env or url_fallback
+
+    if not key:
+        # ดึง key ด้วย regex (ครอบคลุมหลายรูปแบบ URL)
+        m = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", url)
+        if m:
+            key = m.group(1)
+
+    if not key:
+        raise RuntimeError("Cannot parse spreadsheet key from GOOGLE_SHEET_URL. "
+                           "Set GOOGLE_SHEET_KEY explicitly or pass a standard Sheets URL.")
 
     print(f"🔗 Spreadsheet key: {key}")
     print(f"📑 Worksheet: {sheet_name}")
@@ -269,8 +272,8 @@ def setup_google_sheets():
         print("❌ SpreadsheetNotFound:", e or "(no message)")
         raise RuntimeError(
             "Spreadsheet not found or no access.\n"
-            f"- Share the sheet to this service account: {client_email} (Editor)\n"
-            "- Ensure Google Sheets API and Google Drive API are enabled for the project."
+            f"- Share the sheet to: {client_email} (Editor)\n"
+            "- Check the key/URL and ensure Sheets API + Drive API are enabled."
         )
     except APIError as e:
         print("❌ Google APIError:", repr(e))
@@ -278,6 +281,7 @@ def setup_google_sheets():
     except Exception as e:
         print("❌ Error connecting to Google Sheets:", repr(e))
         raise
+
 
 
 
