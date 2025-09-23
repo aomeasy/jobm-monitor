@@ -64,22 +64,70 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Create Google Service Account credentials
+      - name: Create Google Service Account credentials (auto-detect raw/base64)
+        shell: bash
         run: |
-          echo "${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}" | base64 -d > credentials.json
-          # ตรวจสอบว่าไฟล์ไม่ว่างและ parse JSON ได้
-          python - <<'PY'
-      import json, sys, pathlib
-      p = pathlib.Path("credentials.json")
-      data = p.read_text(encoding="utf-8")
-      if not data.strip():
-          sys.exit("credentials.json is empty after base64 decode")
+          set -euo pipefail
+          # 1) ดึงค่ามาเก็บชั่วคราว
+          TMP_SECRETS="$(mktemp)"
+          printf '%s' "${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}" > "$TMP_SECRETS"
+      
+          # 2) ฟังก์ชันเช็คว่าเป็น JSON ตรง ๆ ไหม
+          is_json() {
+            python - "$TMP_SECRETS" <<'PY' || exit 1
+      import json,sys,Pathlib,io,os
+      p=sys.argv[1]
+      s=open(p,'r',encoding='utf-8').read()
       try:
-          json.loads(data)
-      except Exception as e:
-          sys.exit(f"credentials.json is not valid JSON: {e}")
-      print("✅ credentials.json decoded and valid")
+          json.loads(s)
+          print("RAW_JSON_OK")
+      except Exception:
+          print("RAW_JSON_FAIL")
       PY
+          }
+      
+          # 3) ฟังก์ชันลอง base64 → JSON
+          try_b64() {
+            B64D="$(mktemp)"
+            # -d ถ้า decode ไม่ได้ให้ล้ม
+            base64 -d "$TMP_SECRETS" > "$B64D" 2>/dev/null || return 1
+            python - "$B64D" <<'PY' || exit 1
+      import json,sys
+      s=open(sys.argv[1],'r',encoding='utf-8').read()
+      json.loads(s)
+      print("B64_JSON_OK")
+      PY
+            mv "$B64D" credentials.json
+            return 0
+          }
+      
+          # 4) ตัดสินใจ
+          if grep -q '[^[:space:]]' "$TMP_SECRETS"; then
+            if [ "$(is_json || true)" = "RAW_JSON_OK" ]; then
+              cp "$TMP_SECRETS" credentials.json
+              echo "✅ credentials.json written from RAW JSON"
+            elif try_b64; then
+              echo "✅ credentials.json written from BASE64"
+            else
+              echo "❌ Secret is neither valid JSON nor valid base64 JSON."
+              echo "   - ถ้าเก็บเป็น base64: ให้แน่ใจว่า encode ด้วย: base64 -w0 service-account.json"
+              echo "   - ถ้าเก็บเป็น JSON ดิบ: วางค่าแบบไม่ใส่เครื่องหมายคำพูดซ้อนอีกชั้น"
+              exit 1
+            fi
+          else
+            echo "❌ Secret GOOGLE_SERVICE_ACCOUNT_JSON is empty for this workflow run."
+            exit 1
+          fi
+      
+          # 5) ตรวจซ้ำให้ชัวร์
+          python - <<'PY'
+      import json, pathlib
+      p=pathlib.Path("credentials.json")
+      data=p.read_text(encoding="utf-8")
+      json.loads(data)
+      print("✅ credentials.json validated")
+      PY
+
 
       - name: Run job fetcher
         env:
