@@ -66,42 +66,70 @@ def setup_driver():
     options.add_argument("--disable-renderer-backgrounding")
     options.add_argument("--disable-features=TranslateUI,BlinkGenPropertyTrees")
     options.add_argument("--disable-ipc-flooding-protection")
-    options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36")
+    options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option('useAutomationExtension', False)
     
+    # List of possible chromedriver paths
+    possible_paths = [
+        "/usr/local/bin/chromedriver",
+        "/usr/bin/chromedriver", 
+        "/snap/bin/chromium.chromedriver",
+        "chromedriver"  # Let the system find it
+    ]
+    
     # Try multiple approaches to setup the driver
-    for attempt in range(3):
+    for attempt in range(4):
         try:
-            print(f"🔄 Attempt {attempt + 1}/3 to setup ChromeDriver...")
+            print(f"🔄 Attempt {attempt + 1}/4 to setup ChromeDriver...")
+            service = None
             
             if attempt == 0:
-                # Method 1: Try system chromedriver
+                # Method 1: Try system chromedriver in known paths
                 import shutil
                 chromedriver_path = shutil.which('chromedriver')
                 if chromedriver_path:
-                    print(f"🔍 Found system chromedriver at: {chromedriver_path}")
+                    print(f"🔍 Found chromedriver via which: {chromedriver_path}")
                     service = Service(chromedriver_path)
                 else:
-                    print("⚠️ System chromedriver not found")
+                    # Try specific paths
+                    for path in possible_paths[:-1]:  # Exclude the last one (system search)
+                        import os
+                        if os.path.exists(path) and os.access(path, os.X_OK):
+                            print(f"🔍 Found chromedriver at: {path}")
+                            service = Service(path)
+                            break
+                    
+                if not service:
+                    print("⚠️ System chromedriver not found in standard paths")
                     continue
                     
             elif attempt == 1:
-                # Method 2: Try webdriver-manager with specific options
+                # Method 2: Try webdriver-manager (disable if causing issues)
                 print("🔍 Trying webdriver-manager...")
                 try:
                     from webdriver_manager.chrome import ChromeDriverManager
-                    from webdriver_manager.utils import ChromeType
-                    driver_path = ChromeDriverManager(chrome_type=ChromeType.GOOGLE).install()
+                    driver_path = ChromeDriverManager(cache_valid_range=7).install()
                     service = Service(driver_path)
                 except Exception as wdm_error:
                     print(f"⚠️ WebDriver Manager failed: {wdm_error}")
                     continue
                     
-            else:
-                # Method 3: Try without service (let Selenium find it)
-                print("🔍 Trying default Chrome without service...")
+            elif attempt == 2:
+                # Method 3: Try without service (let Selenium auto-detect)
+                print("🔍 Trying Chrome without explicit service...")
                 service = None
+                
+            else:
+                # Method 4: Try chromium-chromedriver (Ubuntu package)
+                print("🔍 Trying chromium-chromedriver (Ubuntu package)...")
+                chromium_driver = "/usr/bin/chromedriver"
+                import os
+                if os.path.exists(chromium_driver):
+                    service = Service(chromium_driver)
+                else:
+                    print("⚠️ Chromium chromedriver not found")
+                    continue
             
             # Create the driver
             if service:
@@ -117,11 +145,12 @@ def setup_driver():
             
         except Exception as e:
             print(f"⚠️ Attempt {attempt + 1} failed: {e}")
-            if attempt == 2:  # Last attempt
+            if attempt == 3:  # Last attempt
                 print(f"❌ All attempts failed. Last error: {e}")
                 # Additional debugging info
                 import platform
                 import subprocess
+                import os
                 print(f"🔍 Platform: {platform.platform()}")
                 print(f"🔍 Architecture: {platform.architecture()}")
                 
@@ -132,17 +161,30 @@ def setup_driver():
                 except:
                     print("🔍 Chrome not found in system")
                 
-                # Check if ChromeDriver is available
-                try:
-                    chromedriver_version = subprocess.check_output(['chromedriver', '--version'], text=True)
-                    print(f"🔍 ChromeDriver available: {chromedriver_version.strip()}")
-                except:
-                    print("🔍 ChromeDriver not found in system")
+                # Check all possible ChromeDriver locations
+                print("🔍 Checking ChromeDriver paths:")
+                for path in possible_paths[:-1]:
+                    if os.path.exists(path):
+                        try:
+                            result = subprocess.check_output([path, '--version'], text=True)
+                            print(f"  ✅ {path}: {result.strip()}")
+                        except:
+                            print(f"  ❌ {path}: exists but not executable")
+                    else:
+                        print(f"  ❌ {path}: not found")
                 
-                raise Exception(f"Cannot setup ChromeDriver after 3 attempts. Last error: {e}")
+                # Check PATH
+                import shutil
+                which_result = shutil.which('chromedriver')
+                if which_result:
+                    print(f"🔍 chromedriver in PATH: {which_result}")
+                else:
+                    print("🔍 chromedriver not in PATH")
+                
+                raise Exception(f"Cannot setup ChromeDriver after 4 attempts. Last error: {e}")
             
             # Wait a bit before next attempt
-            time.sleep(2)
+            time.sleep(1)
 
 def login_to_system(driver):
     """Login to the job management system"""
