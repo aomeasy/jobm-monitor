@@ -65,7 +65,21 @@ jobs:
           pip install -r requirements.txt
 
       - name: Create Google Service Account credentials
-        run: printf '%s' '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > credentials.json
+        run: |
+          echo "${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}" | base64 -d > credentials.json
+          # ตรวจสอบว่าไฟล์ไม่ว่างและ parse JSON ได้
+          python - <<'PY'
+      import json, sys, pathlib
+      p = pathlib.Path("credentials.json")
+      data = p.read_text(encoding="utf-8")
+      if not data.strip():
+          sys.exit("credentials.json is empty after base64 decode")
+      try:
+          json.loads(data)
+      except Exception as e:
+          sys.exit(f"credentials.json is not valid JSON: {e}")
+      print("✅ credentials.json decoded and valid")
+      PY
 
       - name: Run job fetcher
         env:
