@@ -59,16 +59,43 @@ def setup_driver():
     options.add_argument("--disable-extensions")
     options.add_argument("--disable-plugins")
     options.add_argument("--disable-images")
+    options.add_argument("--remote-debugging-port=9222")
+    options.add_argument("--disable-background-timer-throttling")
+    options.add_argument("--disable-backgrounding-occluded-windows")
+    options.add_argument("--disable-renderer-backgrounding")
+    options.add_argument("--disable-features=TranslateUI")
+    options.add_argument("--disable-ipc-flooding-protection")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option('useAutomationExtension', False)
     
     try:
-        service = Service(ChromeDriverManager().install())
+        # Try to use system chromedriver first (installed by GitHub Actions)
+        service = None
+        try:
+            # Check if chromedriver is available in PATH
+            import shutil
+            chromedriver_path = shutil.which('chromedriver')
+            if chromedriver_path:
+                print(f"🔍 Found chromedriver at: {chromedriver_path}")
+                service = Service(chromedriver_path)
+            else:
+                print("🔍 System chromedriver not found, downloading...")
+                service = Service(ChromeDriverManager().install())
+        except Exception as path_error:
+            print(f"⚠️ Path detection error: {path_error}")
+            service = Service(ChromeDriverManager().install())
+        
         driver = webdriver.Chrome(service=service, options=options)
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        print("✅ Chrome WebDriver setup successful")
         return driver
+        
     except Exception as e:
         print(f"❌ Error setting up driver: {e}")
+        # Additional debugging info
+        import platform
+        print(f"🔍 Platform: {platform.platform()}")
+        print(f"🔍 Architecture: {platform.architecture()}")
         raise
 
 def login_to_system(driver):
