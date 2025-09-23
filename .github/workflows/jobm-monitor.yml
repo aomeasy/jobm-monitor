@@ -2,8 +2,7 @@ name: Job Management Automation
 
 on:
   schedule:
-    # รันทุกชั่วโมง จันทร์-ศุกร์ (UTC) — ครอบคลุมทั้งวันไทยได้
-    - cron: '0 * * * 1-5'
+    - cron: '0 * * * 1-5'   # ทุกชั่วโมง จ.-ศ. (UTC)
   workflow_dispatch:
 
 jobs:
@@ -20,6 +19,7 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
+      # ↓↓↓ ตัวนี้เท่านั้นสำหรับ Chrome/Chromedriver (อย่าใช้ wget/URL เก่าแล้ว)
       - name: Setup Chrome
         id: chrome
         uses: browser-actions/setup-chrome@v1
@@ -27,21 +27,19 @@ jobs:
           chrome-version: stable
           install-chromedriver: true
 
-
       - name: Show Chrome info
         run: |
-          echo "Chrome path: ${{ steps.chrome.outputs.chrome-path }}"
-          echo "Chromedriver path: ${{ steps.chrome.outputs.chromedriver-path }}"
-          ${{ steps.chrome.outputs.chrome-path }} --version || true
-          ${{ steps.chrome.outputs.chromedriver-path }} --version || true
+          echo "Chrome: ${{ steps.chrome.outputs.chrome-path }}"
+          echo "Driver: ${{ steps.chrome.outputs.chromedriver-path }}"
+          ${{ steps.chrome.outputs.chrome-path }} --version
+          ${{ steps.chrome.outputs.chromedriver-path }} --version
 
-      - name: Install system deps for headless Chrome
+      - name: Install system deps for headless
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            xvfb libnss3 libgconf-2-4 libxi6 libgdk-pixbuf2.0-0 libgtk-3-0 \
-            libxss1 libasound2 libxrandr2 libgbm1 fonts-liberation \
-            xdg-utils ca-certificates
+            xvfb libnss3 libxi6 libgdk-pixbuf2.0-0 libgtk-3-0 \
+            libxss1 libasound2 libxrandr2 libgbm1 fonts-liberation xdg-utils
 
       - name: Install Python dependencies
         run: |
@@ -49,18 +47,15 @@ jobs:
           pip install -r requirements.txt
 
       - name: Create Google Service Account credentials
-        run: |
-          printf '%s' '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > credentials.json
+        run: printf '%s' '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > credentials.json
 
       - name: Run job fetcher
         env:
-          # บอกตำแหน่ง Chrome / Chromedriver ให้โค้ดรู้ (เผื่อ fallback)
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
           CHROMEDRIVER: ${{ steps.chrome.outputs.chromedriver-path }}
           GOOGLE_SHEET_URL: ${{ vars.GOOGLE_SHEET_URL || 'https://docs.google.com/spreadsheets/d/1uEbsT3PZ8tdwiU1Xga_hS6uPve2H74xD5wUci0EcT0Q/edit?gid=0#gid=0' }}
           GOOGLE_SHEET_NAME: ${{ vars.GOOGLE_SHEET_NAME || 'ชีต1' }}
-        run: |
-          python job_fetcher.py
+        run: python job_fetcher.py
 
       - name: Clean up credentials
         if: always()
