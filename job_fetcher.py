@@ -243,7 +243,7 @@ def setup_google_sheets():
     creds = GCreds.from_service_account_info(data, scopes=scopes)
     gc = gspread.authorize(creds)
 
-    # แนะนำให้เปิดด้วย key (กัน URL แปลก ๆ)
+    # แนะนำให้เปิดด้วย key (กัน URL แปลก ๆ) 
     url = os.getenv(
         "GOOGLE_SHEET_URL",
         "https://docs.google.com/spreadsheets/d/1uEbsT3PZ8tdwiU1Xga_hS6uPve2H74xD5wUci0EcT0Q/edit?gid=0#gid=0",
