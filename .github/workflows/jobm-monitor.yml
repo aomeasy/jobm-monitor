@@ -1,83 +1,45 @@
-# .github/workflows/jobm-monitor.yml
-name: 🤖 JobM Monitor
+name: Job Management Automation
 
 on:
   schedule:
-    # รันทุกชั่วโมง ตั้งแต่ 8:00-17:00 น. วันจันทร์-ศุกร์ (เวลาไทย)
-    - cron: '0 1-10 * * 1-5'  # 08:00-17:00 ICT = 01:00-10:00 UTC
-  
-  workflow_dispatch:  # สามารถรันด้วยตนเองได้
-    inputs:
-      test_mode:
-        description: 'Run in test mode'
-        required: false
-        default: 'false'
-        type: boolean
-
-env:
-  TZ: Asia/Bangkok
+    # รันทุกชั่วโมงในวันจันทร์-ศุกร์ (UTC+0, ต้องปรับตาม timezone ที่ต้องการ)
+    # เวลาไทย UTC+7 ดังนั้น 0-16 UTC = 7-23 เวลาไทย (จ-ศ)
+    - cron: '0 0-16 * * 1-5'
+  workflow_dispatch: # อนุญาตให้รันด้วยตนเองได้
 
 jobs:
-  monitor:
-    name: 🔍 Monitor JobM
+  fetch-jobs:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
     
     steps:
-    - name: 📥 Checkout Code
+    - name: Checkout repository
       uses: actions/checkout@v4
-
-    - name: 🐍 Setup Python
+    
+    - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
-
-    - name: 🌐 Install Chrome
+    
+    - name: Install dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y google-chrome-stable
-
-    - name: 📦 Install Dependencies
-      run: |
-        pip install --no-cache-dir -r requirements.txt
-
-    - name: 🔑 Setup Google Credentials
-      env:
-        GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-      run: |
-        echo "$GOOGLE_SERVICE_ACCOUNT_JSON" | base64 -d > service_account.json
-        echo "GOOGLE_APPLICATION_CREDENTIALS=service_account.json" >> $GITHUB_ENV
-
-    - name: 🚀 Run JobM Monitor
-      env:
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        TEST_MODE: ${{ github.event.inputs.test_mode || 'false' }}
-      run: |
-        echo "🕐 Current time: $(date)"
-        echo "🌍 Timezone: $TZ"
-        
-        if [ "$TEST_MODE" = "true" ]; then
-          echo "🧪 Running in test mode..."
-          python test_monitor.py
-        else
-          echo "🤖 Running JobM Monitor..."
-          python main.py
-        fi
-
-    - name: 🧹 Cleanup
-      if: always()
-      run: |
-        rm -f service_account.json
-        rm -f *.png
-
-    # ✅ แก้ไข: เปลี่ยนจาก v3 เป็น v4
-    - name: 📊 Upload Error Logs
-      if: failure()
-      uses: actions/upload-artifact@v4
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Setup Chrome
+      uses: browser-actions/setup-chrome@latest
       with:
-        name: error-logs-${{ github.run_number }}
-        path: |
-          *.png
-          *.log
-        retention-days: 3
+        chrome-version: stable
+    
+    - name: Create Google Service Account credentials
+      run: |
+        echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > credentials.json
+    
+    - name: Run job fetcher
+      run: python job_fetcher.py
+      env:
+        GOOGLE_SHEET_URL: ${{ vars.GOOGLE_SHEET_URL || 'https://docs.google.com/spreadsheets/d/1uEbsT3PZ8tdwiU1Xga_hS6uPve2H74xD5wUci0EcT0Q/edit?gid=0#gid=0' }}
+        GOOGLE_SHEET_NAME: ${{ vars.GOOGLE_SHEET_NAME || 'ชีต1' }}
+    
+    - name: Clean up credentials
+      if: always()
+      run: rm -f credentials.json
