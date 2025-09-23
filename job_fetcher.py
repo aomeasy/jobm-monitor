@@ -22,6 +22,34 @@ GOOGLE_SHEET_NAME = os.getenv('GOOGLE_SHEET_NAME', 'ชีต1')
 USERNAME = "01000566"
 PASSWORD = "01000566"
 
+def fetch_jobs_by_tab(driver, tab):
+    """
+    ดึงข้อมูลแถวงานจากหน้า index?tab=<tab>
+    คืนค่าเป็น list ของแต่ละงาน [col1..col7] (ตาม parse_row)
+    """
+    try:
+        url = f"https://jobm.edoclite.com/jobManagement/pages/index?tab={tab}"
+        print(f"📥 Fetching jobs from tab={tab} ...")
+        driver.get(url)
+
+        WebDriverWait(driver, 30).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "table tbody tr"))
+        )
+
+        rows = driver.find_elements(By.CSS_SELECTOR, "table tbody tr")
+        data = []
+        for row in rows:
+            parsed = parse_row(row)
+            if parsed:
+                data.append(parsed)
+
+        print(f"📊 Found {len(data)} rows on tab={tab}")
+        return data
+    except Exception as e:
+        print(f"❌ Error fetching tab={tab}: {e}")
+        return []
+
+
 def clean_html(cell):
     try:
         return BeautifulSoup(cell.get_attribute("innerHTML").strip(), "html.parser").get_text(strip=True)
@@ -334,7 +362,17 @@ def setup_google_sheets():
         raise
 
 
-def update_google_sheets(sheet, new_jobs, closed_job_nos):
+def update_google_sheets(sheet, new_jobs, closed_job_nos,
+                         waiting_jobs=None, closed_jobs_full=None):
+    """
+    - new_jobs: จาก tab=13 (ของเดิม)
+    - closed_job_nos: set() จาก tab=15 (ของเดิม ใช้เพื่ออัปเดตสถานะงานที่มีอยู่)
+    - waiting_jobs: list จาก tab=14 (ถ้ายังไม่มีในชีต ให้เพิ่มเป็น 'รอแจ้ง')
+    - closed_jobs_full: list จาก tab=15 (ถ้ายังไม่มีในชีต ให้เพิ่มเป็น 'ปิดงาน')
+    """
+    waiting_jobs = waiting_jobs or []
+    closed_jobs_full = closed_jobs_full or []
+
     try:
         print("✏️ Updating Google Sheets...")
         sheet_data = sheet.get_all_values()
@@ -343,6 +381,7 @@ def update_google_sheets(sheet, new_jobs, closed_job_nos):
             sheet.append_row(headers)
             sheet_data = [headers]
 
+        # ทำดัชนีข้อมูลเดิมในชีต
         existing = set()
         for row in sheet_data[1:]:
             if row and len(row) > 0:
@@ -351,36 +390,80 @@ def update_google_sheets(sheet, new_jobs, closed_job_nos):
         new_added = 0
         updated = 0
 
+        # ====== ของเดิม: เพิ่มจาก new_jobs (tab=13) และอัปเดตสถานะถ้าพบว่าอยู่ใน closed_job_nos ======
         for job in new_jobs:
             if not job or len(job) < 7:
                 continue
-
             job_no = normalize_job_no(job[0])
             status = "ปิดงาน" if job_no in closed_job_nos else "รอแจ้ง"
 
             if job_no not in existing:
                 try:
                     sheet.append_row(job + [status], value_input_option="USER_ENTERED")
-                    print(f"✅ Added: {job_no}")
+                    print(f"✅ Added (tab13): {job_no} -> {status}")
                     new_added += 1
+                    existing.add(job_no)
                     time.sleep(0.5)
                 except Exception as e:
-                    print(f"❌ Error adding job {job_no}: {e}")
+                    print(f"❌ Error adding job {job_no} from tab13: {e}")
             elif status == "ปิดงาน":
+                # อัปเดตสถานะเดิมให้เป็นปิดงาน
                 try:
-                    # หาแถวเดิมเพื่ออัพเดตคอลัมน์สถานะ (คอลัมน์ที่ 8)
                     for i, row in enumerate(sheet_data[1:], start=2):
                         if row and len(row) > 0 and normalize_job_no(row[0]) == job_no:
                             if len(row) < 8 or row[7] != "ปิดงาน":
                                 sheet.update_cell(i, 8, "ปิดงาน")
-                                print(f"🔒 Updated status: {job_no}")
+                                print(f"🔒 Updated status (tab13 closed): {job_no}")
                                 updated += 1
                                 time.sleep(0.5)
                             break
                 except Exception as e:
-                    print(f"❌ Error updating job {job_no}: {e}")
+                    print(f"❌ Error updating job {job_no} from tab13: {e}")
 
-        print(f"📊 Summary: {new_added} new jobs added, {updated} jobs updated")
+        # ====== ใหม่: เติมจาก tab=14 ถ้ายังไม่มี → สถานะ 'รอแจ้ง' ======
+        for job in waiting_jobs:
+            if not job or len(job) < 7:
+                continue
+            job_no = normalize_job_no(job[0])
+            if job_no not in existing:
+                try:
+                    sheet.append_row(job + ["รอแจ้ง"], value_input_option="USER_ENTERED")
+                    print(f"✅ Added (tab14): {job_no} -> รอแจ้ง")
+                    new_added += 1
+                    existing.add(job_no)
+                    time.sleep(0.5)
+                except Exception as e:
+                    print(f"❌ Error adding job {job_no} from tab14: {e}")
+
+        # ====== ใหม่: เติมจาก tab=15 ถ้ายังไม่มี → สถานะ 'ปิดงาน' ======
+        for job in closed_jobs_full:
+            if not job or len(job) < 7:
+                continue
+            job_no = normalize_job_no(job[0])
+            if job_no not in existing:
+                try:
+                    sheet.append_row(job + ["ปิดงาน"], value_input_option="USER_ENTERED")
+                    print(f"✅ Added (tab15): {job_no} -> ปิดงาน")
+                    new_added += 1
+                    existing.add(job_no)
+                    time.sleep(0.5)
+                except Exception as e:
+                    print(f"❌ Error adding job {job_no} from tab15: {e}")
+            else:
+                # ถ้ามีอยู่แล้ว แต่อยากการันตีสถานะปิดงาน (ปล่อยได้ถ้าไม่ต้องการ)
+                try:
+                    for i, row in enumerate(sheet_data[1:], start=2):
+                        if row and len(row) > 0 and normalize_job_no(row[0]) == job_no:
+                            if len(row) < 8 or row[7] != "ปิดงาน":
+                                sheet.update_cell(i, 8, "ปิดงาน")
+                                print(f"🔒 Updated status (tab15 exists): {job_no}")
+                                updated += 1
+                                time.sleep(0.5)
+                            break
+                except Exception as e:
+                    print(f"❌ Error updating existing job {job_no} from tab15: {e}")
+
+        print(f"📊 Summary: {new_added} new rows added, {updated} rows updated")
         return {"new_added": new_added, "updated": updated}
     except Exception as e:
         print(f"❌ Error updating Google Sheets: {e}")
@@ -395,11 +478,22 @@ def main():
         if not login_to_system(driver):
             raise Exception("Login failed")
 
-        new_jobs = fetch_new_jobs(driver)
-        closed_job_nos = fetch_closed_jobs(driver)
+        # ของเดิม
+        new_jobs = fetch_new_jobs(driver)            # tab=13 (เดิม)
+        closed_job_nos = fetch_closed_jobs(driver)   # tab=15 (set of job_no for update status)
+
+        # ใหม่: ดึงข้อมูลเต็มจาก tab=14 และ tab=15 (เพื่อ 'เติมแถว' ถ้ายังไม่เคยมี)
+        waiting_jobs = fetch_jobs_by_tab(driver, 14)  # เพิ่มใหม่ถ้าไม่พบ → สถานะ 'รอแจ้ง'
+        closed_jobs_full = fetch_jobs_by_tab(driver, 15)  # เพิ่มใหม่ถ้าไม่พบ → สถานะ 'ปิดงาน'
 
         sheet = setup_google_sheets()
-        result = update_google_sheets(sheet, new_jobs, closed_job_nos)
+        result = update_google_sheets(
+            sheet,
+            new_jobs=new_jobs,
+            closed_job_nos=closed_job_nos,
+            waiting_jobs=waiting_jobs,
+            closed_jobs_full=closed_jobs_full
+        )
 
         print("✅ Process completed successfully!")
         print(f"📊 Results: {result}")
@@ -413,6 +507,7 @@ def main():
                 print("🔧 WebDriver closed")
             except Exception as e:
                 print(f"⚠️ Error closing driver: {e}")
+
 
 if __name__ == "__main__":
     main()
