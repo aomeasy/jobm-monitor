@@ -85,8 +85,9 @@ jobs:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
           CHROMEDRIVER: ${{ steps.chrome.outputs.chromedriver-path }}
           # ปล่อยให้ Python ใส่ default เองถ้า vars ไม่ได้ตั้งค่า
-          GOOGLE_SHEET_URL: ${{ vars.GOOGLE_SHEET_URL }}
-          GOOGLE_SHEET_NAME: ${{ vars.GOOGLE_SHEET_NAME }}
+          GOOGLE_SHEET_KEY: 1uEbsT3PZ8tdwiU1Xga_hS6uPve2H74xD5wUci0EcT0Q
+          GOOGLE_SHEET_NAME: ชีต1
+          GOOGLE_SHEET_URL: https://docs.google.com/spreadsheets/d/1uEbsT3PZ8tdwiU1Xga_hS6uPve2H74xD5wUci0EcT0Q/edit#gid=0
         run: python job_fetcher.py
 
       - name: Clean up credentials
