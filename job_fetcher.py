@@ -69,26 +69,45 @@ def setup_driver():
     options.add_experimental_option('useAutomationExtension', False)
     
     try:
-        # Try to use system chromedriver first (installed by GitHub Actions)
+        # Try different methods to get ChromeDriver
+        driver = None
         service = None
+        
+        # Method 1: Try to use system chromedriver (installed by GitHub Actions)
         try:
-            # Check if chromedriver is available in PATH
             import shutil
             chromedriver_path = shutil.which('chromedriver')
             if chromedriver_path:
-                print(f"🔍 Found chromedriver at: {chromedriver_path}")
+                print(f"🔍 Found system chromedriver at: {chromedriver_path}")
                 service = Service(chromedriver_path)
+                driver = webdriver.Chrome(service=service, options=options)
             else:
-                print("🔍 System chromedriver not found, downloading...")
+                raise Exception("System chromedriver not found")
+        except Exception as e1:
+            print(f"⚠️ System chromedriver failed: {e1}")
+            
+            # Method 2: Use webdriver-manager
+            try:
+                print("🔍 Trying webdriver-manager...")
                 service = Service(ChromeDriverManager().install())
-        except Exception as path_error:
-            print(f"⚠️ Path detection error: {path_error}")
-            service = Service(ChromeDriverManager().install())
+                driver = webdriver.Chrome(service=service, options=options)
+            except Exception as e2:
+                print(f"⚠️ webdriver-manager failed: {e2}")
+                
+                # Method 3: Try without specifying service (use default)
+                try:
+                    print("🔍 Trying default Chrome setup...")
+                    driver = webdriver.Chrome(options=options)
+                except Exception as e3:
+                    print(f"❌ All methods failed: {e3}")
+                    raise Exception(f"Cannot setup ChromeDriver. Tried system path, webdriver-manager, and default. Last error: {e3}")
         
-        driver = webdriver.Chrome(service=service, options=options)
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        print("✅ Chrome WebDriver setup successful")
-        return driver
+        if driver:
+            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            print("✅ Chrome WebDriver setup successful")
+            return driver
+        else:
+            raise Exception("Failed to create WebDriver instance")
         
     except Exception as e:
         print(f"❌ Error setting up driver: {e}")
