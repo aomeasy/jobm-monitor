@@ -218,22 +218,71 @@ def fetch_closed_jobs(driver):
         return set()
 
 def setup_google_sheets():
+    """Connect to Google Sheets using Service Account.
+       - Prefer credentials.json (file)
+       - Fallback to env GOOGLE_SERVICE_ACCOUNT_JSON (raw JSON or base64)
+    """
+    import pathlib, json, base64
+    from oauth2client.service_account import ServiceAccountCredentials
+    import gspread
+
+    print("📄 Connecting to Google Sheets...")
+
+    # 1) เตรียม scope (ใช้ spreadsheets + drive)
+    scope = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+
+    # 2) พยายามโหลดจากไฟล์ก่อน
+    cred_path = pathlib.Path("credentials.json")
+    creds_obj = None
+
+    def _load_json_str_maybe_base64(s: str) -> dict:
+        """รับสตริงที่อาจเป็น JSON ตรง ๆ หรือ base64-encoded JSON"""
+        s = s.strip()
+        # ลอง parse เป็น JSON ตรง ๆ ก่อน
+        try:
+            return json.loads(s)
+        except Exception:
+            pass
+        # ถ้าไม่ใช่ JSON ตรง ๆ ลอง base64
+        try:
+            decoded = base64.b64decode(s).decode("utf-8")
+            return json.loads(decoded)
+        except Exception as e:
+            raise RuntimeError(f"GOOGLE_SERVICE_ACCOUNT_JSON is neither JSON nor valid base64 JSON: {e}")
+
     try:
-        print("📄 Connecting to Google Sheets...")
-        scope = [
-            "https://spreadsheets.google.com/feeds",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        creds = ServiceAccountCredentials.from_json_keyfile_name(
-            "credentials.json", scope
-        )
-        client = gspread.authorize(creds)
+        if cred_path.exists() and cred_path.stat().st_size > 0:
+            # จากไฟล์
+            data = json.loads(cred_path.read_text(encoding="utf-8"))
+            creds_obj = ServiceAccountCredentials.from_json_keyfile_dict(data, scope)
+            print("🔐 Using credentials from credentials.json")
+        else:
+            # จาก ENV (raw หรือ base64)
+            env_val = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+            if not env_val:
+                raise RuntimeError(
+                    "credentials.json not found and GOOGLE_SERVICE_ACCOUNT_JSON is empty."
+                )
+            data = _load_json_str_maybe_base64(env_val)
+            creds_obj = ServiceAccountCredentials.from_json_keyfile_dict(data, scope)
+            print("🔐 Using credentials from GOOGLE_SERVICE_ACCOUNT_JSON (env)")
+    except Exception as e:
+        print(f"❌ Error loading credentials: {e}")
+        raise
+
+    # 3) Authorize และเปิดชีต
+    try:
+        client = gspread.authorize(creds_obj)
         sheet = client.open_by_url(GOOGLE_SHEET_URL).worksheet(GOOGLE_SHEET_NAME)
         print("✅ Connected to Google Sheets")
         return sheet
     except Exception as e:
         print(f"❌ Error connecting to Google Sheets: {e}")
         raise
+
 
 def update_google_sheets(sheet, new_jobs, closed_job_nos):
     try:
