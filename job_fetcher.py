@@ -13,7 +13,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 import shutil
 import subprocess
 
@@ -219,7 +218,7 @@ def fetch_closed_jobs(driver):
 
 def setup_google_sheets():
     """Connect to Google Sheets using a Service Account (modern auth)."""
-    import json, pathlib, os, re
+    import json, pathlib, os
     import gspread
     from google.oauth2.service_account import Credentials as GCreds
     from gspread.exceptions import APIError, SpreadsheetNotFound
@@ -230,13 +229,13 @@ def setup_google_sheets():
     if not cred_path.exists() or cred_path.stat().st_size == 0:
         raise RuntimeError("credentials.json missing or empty")
 
-    # 1) ใช้ scopes ใหม่ (ต้องเปิดทั้ง Sheets API + Drive API)
+    # ใช้ scopes รุ่นใหม่
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive",
     ]
 
-    # 2) โหลด credential (raw JSON ไฟล์)
+    # โหลด credential (raw JSON)
     data = json.loads(cred_path.read_text(encoding="utf-8"))
     client_email = data.get("client_email")
     print(f"🔐 Service Account: {client_email}")
@@ -244,36 +243,42 @@ def setup_google_sheets():
     creds = GCreds.from_service_account_info(data, scopes=scopes)
     gc = gspread.authorize(creds)
 
-    # 3) เปิดชีตด้วย URL (หรือจะสลับไปใช้ key ก็ได้)
+    # แนะนำให้เปิดด้วย key (กัน URL แปลก ๆ)
     url = os.getenv(
         "GOOGLE_SHEET_URL",
         "https://docs.google.com/spreadsheets/d/1uEbsT3PZ8tdwiU1Xga_hS6uPve2H74xD5wUci0EcT0Q/edit?gid=0#gid=0",
     )
     sheet_name = os.getenv("GOOGLE_SHEET_NAME", "ชีต1")
-    print(f"🔗 Target URL: {url}")
+
+    # ดึง key จาก URL
+    # รูปแบบ: https://docs.google.com/spreadsheets/d/<KEY>/edit...
+    try:
+        key = url.split("/d/")[1].split("/")[0]
+    except Exception:
+        raise RuntimeError("Cannot parse spreadsheet key from GOOGLE_SHEET_URL")
+
+    print(f"🔗 Spreadsheet key: {key}")
     print(f"📑 Worksheet: {sheet_name}")
 
     try:
-        sh = gc.open_by_url(url)   # ถ้าอยากกันปัญหา URL → ใช้ open_by_key ได้ (ดูบล็อกด้านล่าง)
+        sh = gc.open_by_key(key)
         ws = sh.worksheet(sheet_name)
         print("✅ Connected to Google Sheets")
         return ws
     except SpreadsheetNotFound as e:
-        # สาเหตุหลัก ๆ: ยังไม่ได้แชร์ชีตให้ service account / URL ผิด / ใช้บัญชีคนละโดเมนที่บล็อกการแชร์
-        msg = (
-            "Spreadsheet not found or no access.\n"
-            f"- Make sure the sheet is shared to: {client_email} (Editor)\n"
-            "- Double-check the URL/key and that Drive API is enabled.\n"
-        )
         print("❌ SpreadsheetNotFound:", e or "(no message)")
-        raise RuntimeError(msg)
+        raise RuntimeError(
+            "Spreadsheet not found or no access.\n"
+            f"- Share the sheet to this service account: {client_email} (Editor)\n"
+            "- Ensure Google Sheets API and Google Drive API are enabled for the project."
+        )
     except APIError as e:
-        # มักเป็น 403: insufficient permissions / scope ไม่ตรง
         print("❌ Google APIError:", repr(e))
         raise
     except Exception as e:
         print("❌ Error connecting to Google Sheets:", repr(e))
         raise
+
 
 
     def _load_json_str_maybe_base64(s: str) -> dict:
