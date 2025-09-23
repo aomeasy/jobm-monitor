@@ -34,12 +34,30 @@ jobs:
           ${{ steps.chrome.outputs.chrome-path }} --version
           ${{ steps.chrome.outputs.chromedriver-path }} --version
 
-      - name: Install system deps for headless
+      - name: Install system deps for headless (Ubuntu 24.04/Noble)
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            xvfb libnss3 libxi6 libgdk-pixbuf2.0-0 libgtk-3-0 \
-            libxss1 libasound2 libxrandr2 libgbm1 fonts-liberation xdg-utils
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            xvfb \
+            libnss3 \
+            libxss1 \
+            libgbm1 \
+            libgtk-3-0 \
+            libxshmfence1 \
+            libdrm2 \
+            libx11-6 \
+            libxcomposite1 \
+            libxdamage1 \
+            libxrandr2 \
+            libglib2.0-0 \
+            libgdk-pixbuf2.0-0 \
+            fonts-liberation \
+            xdg-utils \
+            ca-certificates \
+            libasound2t64
+
 
       - name: Install Python dependencies
         run: |
