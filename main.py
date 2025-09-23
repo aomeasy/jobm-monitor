@@ -45,6 +45,166 @@ PROCESSING_ORDER = [
     }
 ]
 
+
+
+def append_rows_to_google_sheet_debug(rows_to_append_df, spreadsheet_url, sheet_name):
+    """เพิ่มแถวใหม่ลงใน Google Sheet พร้อม debug ละเอียด"""
+    if rows_to_append_df.empty:
+        print("⚠️ ไม่มีข้อมูลใหม่ที่จะเพิ่มลง Google Sheet")
+        return False
+
+    print(f"\n🔍 Debug: กำลังเพิ่มข้อมูลลง Google Sheet...")
+    print(f"📊 จำนวนแถว: {len(rows_to_append_df)}")
+    print(f"📋 Columns ใน DataFrame: {list(rows_to_append_df.columns)}")
+    
+    # แสดงตัวอย่างข้อมูล
+    print(f"📄 ตัวอย่างข้อมูลแถวแรก:")
+    if len(rows_to_append_df) > 0:
+        first_row = rows_to_append_df.iloc[0]
+        for col, val in first_row.items():
+            print(f"   {col}: {val}")
+
+    try:
+        # ใช้ environment variables แทน default()
+        credentials = Credentials.from_service_account_file(
+            os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+        )
+        
+        print("✅ สร้าง credentials สำเร็จ")
+        
+        client = gspread.authorize(credentials)
+        print("✅ เชื่อมต่อ gspread สำเร็จ")
+        
+        # แยก sheet ID จาก URL
+        if 'spreadsheets/d/' in spreadsheet_url:
+            sheet_id = spreadsheet_url.split('spreadsheets/d/')[1].split('/')[0]
+            print(f"📄 Sheet ID: {sheet_id}")
+            spreadsheet = client.open_by_key(sheet_id)
+        else:
+            spreadsheet = client.open_by_url(spreadsheet_url)
+        
+        print(f"📊 เปิด spreadsheet สำเร็จ: {spreadsheet.title}")
+        
+        worksheet = spreadsheet.worksheet(sheet_name)
+        print(f"📋 เปิด worksheet สำเร็จ: {worksheet.title}")
+        
+        # ตรวจสอบ header ปัจจุบันใน sheet
+        try:
+            current_headers = worksheet.row_values(1)
+            print(f"📋 Headers ใน Google Sheet: {current_headers}")
+        except:
+            current_headers = []
+            print("⚠️ ไม่มี headers ใน Google Sheet")
+        
+        # เตรียมข้อมูลสำหรับเขียน
+        data_to_append = rows_to_append_df.values.tolist()
+        print(f"📝 Data to append: {len(data_to_append)} rows")
+        
+        # แสดงตัวอย่าง 1 แถว
+        if data_to_append:
+            print(f"📄 ตัวอย่างแถวที่จะเพิ่ม: {data_to_append[0]}")
+        
+        # เขียนข้อมูล
+        worksheet.append_rows(data_to_append)
+        print(f"✅ เพิ่ม {len(rows_to_append_df)} แถวใหม่ลง Google Sheet สำเร็จ!")
+        
+        # ตรวจสอบผลลัพธ์
+        try:
+            all_records = worksheet.get_all_records()
+            print(f"📊 ข้อมูลทั้งหมดใน Sheet ตอนนี้: {len(all_records)} แถว")
+            
+            # แสดงแถวล่าสุด
+            if all_records:
+                latest_record = all_records[-1]
+                print(f"📄 แถวล่าสุดใน Sheet:")
+                for key, val in latest_record.items():
+                    print(f"   {key}: {val}")
+        except Exception as e:
+            print(f"⚠️ ไม่สามารถตรวจสอบผลลัพธ์ได้: {e}")
+        
+        return True
+        
+    except gspread.SpreadsheetNotFound:
+        print("❌ ไม่พบ spreadsheet - ตรวจสอบ URL และการแชร์")
+        return False
+    except gspread.WorksheetNotFound:
+        print(f"❌ ไม่พบ worksheet '{sheet_name}' - ตรวจสอบชื่อ sheet")
+        return False
+    except gspread.APIError as e:
+        print(f"❌ Google Sheets API Error: {e}")
+        if 'PERMISSION_DENIED' in str(e):
+            print("💡 ตรวจสอบการแชร์ Google Sheet ให้ service account")
+        elif 'UNAUTHENTICATED' in str(e):
+            print("💡 ตรวจสอบ service account credentials")
+        return False
+    except Exception as e:
+        print(f"❌ เกิดข้อผิดพลาดในการเพิ่มข้อมูลลง Google Sheet: {e}")
+        print(f"❌ Error type: {type(e).__name__}")
+        import traceback
+        print(f"❌ Full traceback: {traceback.format_exc()}")
+        return False
+
+def fix_column_mapping(df):
+    """แก้ไขปัญหา column mapping ระหว่าง JobM และ Google Sheet"""
+    
+    # Mapping ชื่อ column ที่ต่างกัน
+    column_mapping = {
+        'Job No.': 'Job No',  # ลบจุดออก
+        'ศูนย์ที่รับแจ้ง': 'ศูนย์ที่รับ',
+        'วันที่แจ้ง': 'วันที่แจ้ง',
+        'วันที่เสร็จ': 'วันที่เสร็จ',
+        'สถานะการดำเนินงาน': 'สถานะการดำเนินงาน date format'
+    }
+    
+    # เปลี่ยนชื่อ columns
+    df_fixed = df.rename(columns=column_mapping)
+    
+    # กำหนด columns ที่ต้องการ (ตาม Google Sheet)
+    required_columns = [
+        'Job No', 'เรื่องที่แจ้ง', 'ศูนย์ที่แจ้ง', 'ศูนย์ที่รับ', 
+        'วันที่แจ้ง', 'วันที่เสร็จ', 'รูปแบบงาน', 'สถานะการดำเนินงาน date format'
+    ]
+    
+    # เพิ่ม columns ที่ขาดหายไป
+    for col in required_columns:
+        if col not in df_fixed.columns:
+            df_fixed[col] = ''  # ใส่ค่าว่าง
+    
+    # เรียงลำดับ columns ให้ตรงกับ Google Sheet
+    df_ordered = df_fixed[required_columns]
+    
+    print(f"🔧 แก้ไข column mapping:")
+    print(f"   📥 Input columns: {list(df.columns)}")
+    print(f"   📤 Output columns: {list(df_ordered.columns)}")
+    
+    return df_ordered
+
+def test_manual_write_to_sheet():
+    """ทดสอบเขียนข้อมูล manual ลง Google Sheet"""
+    
+    # สร้างข้อมูลทดสอบ
+    test_data = {
+        'Job No': ['TEST-001'],
+        'เรื่องที่แจ้ง': ['ทดสอบการเขียนข้อมูล'],
+        'ศูนย์ที่แจ้ง': ['ศูนย์ทดสอบ'],
+        'ศูนย์ที่รับ': ['ศูนย์รับทดสอบ'],
+        'วันที่แจ้ง': ['2025-09-23'],
+        'วันที่เสร็จ': [''],
+        'รูปแบบงาน': ['ทดสอบ'],
+        'สถานะการดำเนินงาน date format': ['งานใหม่']
+    }
+    
+    df_test = pd.DataFrame(test_data)
+    
+    print("🧪 ทดสอบการเขียนข้อมูลลง Google Sheet...")
+    success = append_rows_to_google_sheet_debug(
+        df_test, 
+        GOOGLE_SHEET_URL, 
+        GOOGLE_SHEET_NAME
+    )
+    
+    return success
+
 def test_google_sheet_authentication():
     """
     ทดสอบการเชื่อมต่อ Google Sheet และแสดงข้อมูลการตรวจสอบ
