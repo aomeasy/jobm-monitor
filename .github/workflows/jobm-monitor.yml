@@ -3,7 +3,7 @@ name: Job Management Automation
 on:
   schedule:
     - cron: '0 * * * 1-5'   # ทุกชั่วโมง จ.-ศ. (UTC)
-  workflow_dispatch:
+  workflow_dispatch: 
 
 jobs:
   fetch-jobs:
