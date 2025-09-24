@@ -680,17 +680,17 @@ def main():
         if not login_to_system(driver):
             raise Exception("Login failed")
             
-        # ฟังก์ชันช่วยตรวจสอบว่ามีข้อมูลจริงหรือไม่ (สำหรับ internal jobs)
-        def has_valid_internal_data(job_list):
+        # ฟังก์ชันกรองข้อมูล internal ที่ขึ้นต้นด้วย "บบลนป" เท่านั้น
+        def filter_internal_jobs(job_list):
             if not job_list:
-                return False
+                return None
+            filtered = []
             for job in job_list:
                 if job and len(job) > 0:
                     job_no = str(job[0]).strip() if job[0] else ""
-                    # เฉพาะ internal jobs ต้องขึ้นต้นด้วย "บบลนป" เท่านั้น
                     if job_no.startswith("บบลนป"):
-                        return True
-            return False
+                        filtered.append(job)
+            return filtered if filtered else None
         
         # ฟังก์ชันช่วยตรวจสอบว่ามีข้อมูลจริงหรือไม่ (สำหรับ regular jobs)
         def has_valid_data(job_list):
@@ -701,19 +701,31 @@ def main():
                     return True
             return False
         
+        # ฟังก์ชันกรองข้อมูล internal ที่ขึ้นต้นด้วย "บบลนป" เท่านั้น
+        def filter_internal_jobs(job_list):
+            if not job_list:
+                return None
+            filtered = []
+            for job in job_list:
+                if job and len(job) > 0:
+                    job_no = str(job[0]).strip() if job[0] else ""
+                    if job_no.startswith("บบลนป"):
+                        filtered.append(job)
+            return filtered if filtered else None
+        
         # งานใหม่ภายในศูนย์
         internal_new_18 = fetch_jobs_by_tab(driver, 18)
         internal_new_7 = fetch_jobs_by_tab(driver, 7)
         internal_new_combined = (internal_new_18 or []) + (internal_new_7 or [])
-        internal_new_jobs = internal_new_combined if has_valid_internal_data(internal_new_combined) else None
+        internal_new_jobs = filter_internal_jobs(internal_new_combined)
         
         # ปิดงานภายในศูนย์
         internal_closed_full_raw = fetch_jobs_by_tab(driver, 11)
-        internal_closed_full = internal_closed_full_raw if has_valid_internal_data(internal_closed_full_raw) else None
+        internal_closed_full = filter_internal_jobs(internal_closed_full_raw)
         
         # งานที่ปิดแล้ว (ภายในศูนย์)
         internal_closed_already_raw = fetch_jobs_by_tab(driver, 20)
-        internal_closed_already = internal_closed_already_raw if has_valid_internal_data(internal_closed_already_raw) else None
+        internal_closed_already = filter_internal_jobs(internal_closed_already_raw)
         
         # งานที่ปิดแล้ว (tab 16)
         closed_already_jobs_raw = fetch_jobs_by_tab(driver, 16)
