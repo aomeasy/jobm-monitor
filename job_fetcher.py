@@ -458,6 +458,7 @@ def update_google_sheets(sheet, new_jobs, closed_job_nos,
 
             if job_no not in existing:
                 try:
+                    print("DEBUG (tab15) ->", job_for_sheet + ["ปิดงาน"])
                     sheet.append_row(job_for_sheet + ["ปิดงาน"], value_input_option="USER_ENTERED")
                     print(f"✅ Added (tab15): {job_no} -> ปิดงาน")
                     new_added += 1
