@@ -686,7 +686,10 @@ def main():
                 return False
             for job in job_list:
                 if job and any(str(cell).strip() for cell in job[:7]):
-                    return True
+                    # สำหรับ internal jobs ต้องมี "บบลนป" หรือ "No" pattern
+                    job_no = str(job[0]).strip() if job else ""
+                    if job_no.startswith("บบลนป") or looks_like_jobno(job_no):
+                        return True
             return False
         
         # งานใหม่ภายในศูนย์
