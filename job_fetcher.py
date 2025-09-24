@@ -22,7 +22,18 @@ GOOGLE_SHEET_URL = os.getenv('GOOGLE_SHEET_URL', 'https://docs.google.com/spread
 GOOGLE_SHEET_NAME = os.getenv('GOOGLE_SHEET_NAME', 'ชีต1')
 USERNAME = "01000566"
 PASSWORD = "01000566"
-JOBNO_PAT = re.compile(r"No\d+-\d+")  # จับ No68-0033, No123-4567 ฯลฯ (มีอักษรไทยค้ำหน้าก็เจอ)
+
+JOBNO_PAT = re.compile(r"No\d+(?:-\d+)?", re.IGNORECASE)
+
+def looks_like_jobno(text: str) -> bool:
+    t = (text or "").strip()
+    if not t:
+        return False
+    # ถ้าขึ้นต้นด้วย 'บบลนป' ให้ถือว่าเป็น Job No ทันที
+    if t.startswith("บบลนป"):
+        return True
+    # หรือมีแพทเทิร์น No\d+(-\d+)? อยู่ในข้อความ
+    return bool(JOBNO_PAT.search(t))
 
 def fetch_jobs_by_tab(driver, tab):
     """
@@ -80,30 +91,45 @@ def parse_row(row):
     except Exception as e:
         print(f"⚠️ Error parsing row: {e}")
         return None
+        
 def parse_row_by_tab(row, tab: int):
     """
     คืน list 7 ช่องเหมือน parse_row() แต่:
     - tab=16: ดักกรณีคอลัมน์ 'Job No.' กับ 'เรื่องที่แจ้ง' สลับกัน แล้วสลับกลับให้
-               และทำความสะอาด Job No สำหรับ 'แสดง' (ตัดหลัง '/')
+              ถ้าข้อความขึ้นต้นด้วย 'บบลนป' ให้ถือว่าเป็น Job No
+              และทำความสะอาด Job No สำหรับ 'แสดง' (ตัดหลัง '/')
     """
     cols = row.find_elements(By.TAG_NAME, "td")
     if len(cols) < 8:
         return None
+
     # ค่าดิบตามหน้าเว็บ (ข้ามคอลัมน์ลำดับ)
     raw = [clean_html(cols[i]) for i in range(1, 8)]
 
     if tab == 16:
-        # โดยปกติ raw[0] = Job No., raw[1] = เรื่องที่แจ้ง
-        # แต่หน้าเว็บบางครั้งสลับกัน: ตรวจด้วย regex ถ้าเจอ jobno อยู่ที่ raw[1] แต่ไม่อยู่ raw[0] -> สลับกลับ
-        has_job0 = bool(JOBNO_PAT.search(raw[0]))
-        has_job1 = bool(JOBNO_PAT.search(raw[1]))
-        if (not has_job0) and has_job1:
-            raw[0], raw[1] = raw[1], raw[0]  # สลับกลับ
+        # helper ภายในฟังก์ชันเพื่อแยกแยะว่า "คล้าย Job No" ไหม
+        def _looks_like_jobno(t: str) -> bool:
+            t = (t or "").strip()
+            if not t:
+                return False
+            # บางรายการขึ้นต้นด้วย 'บบลนป' ให้ถือว่าเป็น Job No ทันที
+            if t.startswith("บบลนป"):
+                return True
+            # รองรับ No68-0033 / No0065 ฯลฯ (มี/ไม่มีขีด)
+            return bool(re.search(r"No\d+(?:-\d+)?", t, flags=re.IGNORECASE))
 
-        # ทำความสะอาด Job No สำหรับ 'แสดง' (คงรูปเดิมแค่ตัดหลัง '/')
+        has0 = _looks_like_jobno(raw[0])
+        has1 = _looks_like_jobno(raw[1])
+
+        # ถ้า col0 ไม่ใช่ job แต่ col1 ใช่ -> สลับกลับ
+        if (not has0) and has1:
+            raw[0], raw[1] = raw[1], raw[0]
+
+        # ทำความสะอาด Job No สำหรับ 'แสดง' (คง prefix เดิม แค่ตัดหลัง '/')
         raw[0] = clean_job_no_display(raw[0])
 
     return raw
+
 
 
 def normalize_job_no(job_no: str) -> str:
