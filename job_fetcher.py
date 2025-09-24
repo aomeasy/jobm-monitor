@@ -27,25 +27,37 @@ JOBNO_PAT = re.compile(r"No\d+-\d+")  # จับ No68-0033, No123-4567 ฯล�
 def fetch_jobs_by_tab(driver, tab):
     """
     ดึงข้อมูลแถวงานจากหน้า index?tab=<tab>
-    คืนค่าเป็น list ของแต่ละงาน [col1..col7] (ตาม parse_row)
+    - tab=16: โหลดทั้งหมดด้วย rowsPerPage=100000 และ (ถ้ามี) ใช้ parse_row_by_tab
+    คืนค่า list ของแต่ละงาน [col1..col7]
     """
     try:
-        url = f"https://jobm.edoclite.com/jobManagement/pages/index?tab={tab}"
-        print(f"📥 Fetching jobs from tab={tab} ...")
+        tab_int = int(tab)
+        base = "https://jobm.edoclite.com/jobManagement/pages/index"
+        url = f"{base}?tab={tab_int}"
+        if tab_int == 16:
+            url += "&rowsPerPage=100000"  # โหลดทั้งหมด
+
+        print(f"📥 Fetching jobs from tab={tab_int} ...")
         driver.get(url)
 
-        WebDriverWait(driver, 30).until(
+        # หน้าข้อมูลเยอะให้รอนานขึ้นเฉพาะ tab=16
+        wait_sec = 60 if tab_int == 16 else 30
+        WebDriverWait(driver, wait_sec).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "table tbody tr"))
         )
 
         rows = driver.find_elements(By.CSS_SELECTOR, "table tbody tr")
         data = []
+
+        # ใช้ parser เฉพาะ tab=16 ถ้ามีให้ใช้, ไม่มีก็ใช้ตัวเดิม
+        use_parse_by_tab = (tab_int == 16) and ('parse_row_by_tab' in globals())
+
         for row in rows:
-            parsed = parse_row(row)
+            parsed = parse_row_by_tab(row, tab_int) if use_parse_by_tab else parse_row(row)
             if parsed:
                 data.append(parsed)
 
-        print(f"📊 Found {len(data)} rows on tab={tab}")
+        print(f"📊 Found {len(data)} rows on tab={tab_int}")
         return data
     except Exception as e:
         print(f"❌ Error fetching tab={tab}: {e}")
@@ -419,7 +431,8 @@ def update_google_sheets(sheet, new_jobs, closed_job_nos,
     - tab=14 : ถ้ายังไม่เจอ -> เพิ่ม พร้อมสถานะ 'รอแจ้ง'
     - tab=15 : ถ้ายังไม่เจอ -> เพิ่ม (ปรับคอลัมน์: C ว่าง + shift ขวา 1) พร้อมสถานะ 'ปิดงาน'
                ถ้าเจอแล้วและยังไม่ปิด -> อัปเดตสถานะเป็น 'ปิดงาน'
-    - tab=16 : ถ้ายังไม่เจอ -> เพิ่ม พร้อมสถานะ 'งานที่ปิดแล้ว' (ไม่แก้รายการเดิม)
+    - tab=16 : ถ้ายังไม่เจอ -> เพิ่ม (คอลัมน์ C เว้นว่าง + shift ขวา) พร้อมสถานะ 'งานที่ปิดแล้ว'
+               ดักกรณี Job No กับ เรื่องที่แจ้งสลับกัน แล้วสลับกลับให้
     """
     waiting_jobs = waiting_jobs or []
     closed_jobs_full = closed_jobs_full or []
@@ -517,14 +530,27 @@ def update_google_sheets(sheet, new_jobs, closed_job_nos,
                     print(f"❌ Error updating existing job {job_no} from tab15: {e}")
 
         # ====== tab=16 (งานที่ปิดแล้ว) ======
+        # ดักกรณี Job No กับ เรื่องที่แจ้งสลับกัน -> สลับกลับ
+        jobno_re = re.compile(r"No\d+-\d+")
         for job in closed_already_jobs:
             if not job or len(job) < 7:
                 continue
-            job_no = normalize_job_no(job[0])  # parser ของ tab=16 ตัด '/' แล้วใน display
+
+            # ถ้า job[0] ไม่ใช่ Job No แต่ job[1] เป็น -> สลับ
+            has0 = bool(jobno_re.search(job[0] or ""))
+            has1 = bool(jobno_re.search(job[1] or ""))
+            if (not has0) and has1:
+                job[0], job[1] = job[1], job[0]
+
+            job_no = normalize_job_no(job[0])
+
+            # ใช้กติกาเหมือน tab=15: คอลัมน์ C เว้นว่าง + shift ขวา
+            job_for_sheet = adjust_cols_for_sheet(job)
+
             if job_no not in existing:
                 try:
-                    print("DEBUG (tab16) ->", job + ["งานที่ปิดแล้ว"])
-                    sheet.append_row(job + ["งานที่ปิดแล้ว"], value_input_option="USER_ENTERED")
+                    print("DEBUG (tab16) ->", job_for_sheet + ["งานที่ปิดแล้ว"])
+                    sheet.append_row(job_for_sheet + ["งานที่ปิดแล้ว"], value_input_option="USER_ENTERED")
                     print(f"✅ Added (tab16): {job_no} -> งานที่ปิดแล้ว")
                     new_added += 1
                     existing.add(job_no)
@@ -537,7 +563,6 @@ def update_google_sheets(sheet, new_jobs, closed_job_nos,
     except Exception as e:
         print(f"❌ Error updating Google Sheets: {e}")
         return {"new_added": 0, "updated": 0, "error": str(e)}
-
 
 def main():
     print(f"🚀 Starting job fetch process at {datetime.now()}")
