@@ -545,7 +545,7 @@ def update_google_sheets(sheet, new_jobs, closed_job_nos,
                     time.sleep(0.5)
                 except Exception as e:
                     print(f"❌ Error adding job {job_no} from tab14: {e}")
-
+                    
         # ====== tab=15 ======
         for job in closed_jobs_full:
             if not job or len(job) < 7:
@@ -565,16 +565,24 @@ def update_google_sheets(sheet, new_jobs, closed_job_nos,
                     print(f"❌ Error adding job {job_no} from tab15: {e}")
             else:
                 try:
+                    # หาแถวเดิมแล้วดูสถานะปัจจุบัน (คอลัมน์ที่ 8)
                     for i, row in enumerate(sheet_data[1:], start=2):
                         if row and len(row) > 0 and normalize_job_no(row[0]) == job_no:
-                            if len(row) < 8 or row[7] != "ปิดงาน":
-                                sheet.update_cell(i, 8, "ปิดงาน")
-                                print(f"🔒 Updated status (tab15 exists): {job_no}")
+                            current_status = row[7] if len(row) >= 8 else ""
+
+                            # ถ้าเคยเป็น "แจ้งแล้ว" และกำลังจะเปลี่ยนเป็น "ปิดงาน"
+                            # ให้เปลี่ยนเป็น "ปิดงาน_รอแจ้ง" ก่อน เพื่อให้ GAS ไป stamp แจ้งปิดงาน
+                            new_status = "ปิดงาน_รอแจ้ง" if current_status == "แจ้งแล้ว ✅" else "ปิดงาน"
+
+                            if len(row) < 8 or row[7] != new_status:
+                                sheet.update_cell(i, 8, new_status)
+                                print(f"🔒 Updated status (tab15 exists): {job_no} -> {new_status}")
                                 updated += 1
                                 time.sleep(0.5)
                             break
                 except Exception as e:
                     print(f"❌ Error updating existing job {job_no} from tab15: {e}")
+
 
         # ====== tab=16 (งานที่ปิดแล้ว) ======
         # ดักกรณี Job No กับ เรื่องที่แจ้งสลับกัน -> สลับกลับ
