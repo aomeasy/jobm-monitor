@@ -1,301 +1,151 @@
 name: Job Management Automation
 
-
-
 # รันทุก 2 ชั่วโมงในวันจันทร์-ศุกร์ เวลา 08:00-17:00 (GMT+7)
-
 # GitHub Actions ใช้ UTC ดังนั้นต้องลบ 7 ชั่วโมง
-
 # 08:00-17:00 GMT+7 = 01:00-10:00 UTC
-
 on:
-
-  schedule:
-
-    # รันทุก 2 ชั่วโมง: 08:00, 10:00, 12:00, 14:00, 16:00 GMT+7
-
-    # UTC: 01:00, 03:00, 05:00, 07:00, 09:00
-
-    - cron: '0 1,3,5,7,9 * * 1-5'  # นาที ชั่วโมง วัน เดือน วันในสัปดาห์
-
-  
-
-  workflow_dispatch:
-
-
+  schedule:
+    # รันทุก 2 ชั่วโมง: 08:00, 10:00, 12:00, 14:00, 16:00 GMT+7
+    # UTC: 01:00, 03:00, 05:00, 07:00, 09:00
+    - cron: '0 1,3,5,7,9 * * 1-5'  # นาที ชั่วโมง วัน เดือน วันในสัปดาห์
+  
+  workflow_dispatch:
 
 jobs:
-
-  fetch-jobs:
-
-    runs-on: ubuntu-latest
-
-    timeout-minutes: 15  # จำกัดเวลาไม่ให้เกิน 15 นาที
-
-    
-
-    steps:
-
-      - name: Checkout repository
-
-        uses: actions/checkout@v4
-
-        
-
-      - name: Set up Python
-
-        uses: actions/setup-python@v5
-
-        with:
-
-          python-version: '3.11'
-
-          cache: 'pip'
-
-          
-
-      # ติดตั้ง Chrome for Testing + Chromedriver ที่ตรงเวอร์ชัน
-
-      - name: Setup Chrome
-
-        id: chrome
-
-        uses: browser-actions/setup-chrome@v1
-
-        with:
-
-          chrome-version: stable
-
-          install-chromedriver: true
-
-          
-
-      - name: Show Chrome info
-
-        run: |
-
-          echo "Chrome: ${{ steps.chrome.outputs.chrome-path }}"
-
-          echo "Driver: ${{ steps.chrome.outputs.chromedriver-path }}"
-
-          ${{ steps.chrome.outputs.chrome-path }} --version
-
-          ${{ steps.chrome.outputs.chromedriver-path }} --version
-
-          
-
-      - name: Install system deps for headless (Ubuntu 24.04/Noble)
-
-        env:
-
-          DEBIAN_FRONTEND: noninteractive
-
-        run: |
-
-          sudo apt-get update -y
-
-          sudo apt-get install -y --no-install-recommends \
-
-            xvfb \
-
-            libnss3 \
-
-            libxss1 \
-
-            libgbm1 \
-
-            libgtk-3-0 \
-
-            libxshmfence1 \
-
-            libdrm2 \
-
-            libx11-6 \
-
-            libxcomposite1 \
-
-            libxdamage1 \
-
-            libxrandr2 \
-
-            libglib2.0-0 \
-
-            libgdk-pixbuf2.0-0 \
-
-            fonts-liberation \
-
-            xdg-utils \
-
-            ca-certificates \
-
-            libasound2t64
-
-            
-
-      - name: Install Python dependencies
-
-        run: |
-
-          python -m pip install --upgrade pip
-
-          pip install -r requirements.txt
-
-          
-
-      - name: Check timezone and current time
-
-        run: |
-
-          echo "Current UTC time: $(date -u)"
-
-          echo "Bangkok time (GMT+7): $(TZ='Asia/Bangkok' date)"
-
-          echo "Current hour in Bangkok: $(TZ='Asia/Bangkok' date +'%H')"
-
-          
-
-      - name: Verify business hours
-
-        run: |
-
-          CURRENT_HOUR=$(TZ='Asia/Bangkok' date +'%H')
-
-          CURRENT_DOW=$(TZ='Asia/Bangkok' date +'%u')  # 1=Monday, 7=Sunday
-
-          
-
-          echo "Bangkok hour: $CURRENT_HOUR, Day of week: $CURRENT_DOW"
-
-          
-
-          if [ $CURRENT_DOW -ge 1 ] && [ $CURRENT_DOW -le 5 ]; then
-
-            if [ $CURRENT_HOUR -ge 8 ] && [ $CURRENT_HOUR -le 17 ]; then
-
-              echo "✅ Within business hours (Mon-Fri 08:00-17:00 Bangkok time)"
-
-              echo "SHOULD_RUN=true" >> $GITHUB_ENV
-
-            else
-
-              echo "⏰ Outside business hours"
-
-              echo "SHOULD_RUN=false" >> $GITHUB_ENV
-
-            fi
-
-          else
-
-            echo "📅 Weekend - not running"
-
-            echo "SHOULD_RUN=false" >> $GITHUB_ENV
-
-          fi
-
-          
-
-      - name: Create Google Service Account credentials (raw JSON)
-
-        if: env.SHOULD_RUN == 'true'
-
-        run: |
-
-          printf '%s' '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > credentials.json
-
-          python - <<'PY'
-
-          import json, pathlib, sys
-
-          p = pathlib.Path("credentials.json")
-
-          data = p.read_text(encoding="utf-8")
-
-          try:
-
-              json.loads(data)
-
-          except Exception as e:
-
-              sys.exit(f"credentials.json is not valid JSON: {e}")
-
-          print("✅ credentials.json written and valid")
-
-          PY
-
-          
-
-      - name: Run job fetcher
-
-        if: env.SHOULD_RUN == 'true'
-
-        env:
-
-          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
-
-          CHROMEDRIVER: ${{ steps.chrome.outputs.chromedriver-path }}
-
-          # ใช้ค่า default หากไม่ได้ตั้ง secrets
-
-          GOOGLE_SHEET_KEY: ${{ secrets.GOOGLE_SHEET_KEY || '1uEbsT3PZ8tdwiU1Xga_hS6uPve2H74xD5wUci0EcT0Q' }}
-
-          GOOGLE_SHEET_NAME: ${{ secrets.GOOGLE_SHEET_NAME || 'ชีต1' }}
-
-          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL || 'https://docs.google.com/spreadsheets/d/1uEbsT3PZ8tdwiU1Xga_hS6uPve2H74xD5wUci0EcT0Q/edit#gid=0' }}
-
-          WORKER_PUSH_URL: ${{ secrets.WORKER_PUSH_URL }}
-
-          LINE_TO: ${{ secrets.LINE_TO }}
-
-        run: |
-
-          echo "🚀 Starting job fetcher at $(TZ='Asia/Bangkok' date)"
-
-          python job_fetcher.py
-
-          echo "✅ Job fetcher completed at $(TZ='Asia/Bangkok' date)"
-
-          
-
-      - name: Skip execution (outside business hours)
-
-        if: env.SHOULD_RUN == 'false'
-
-        run: |
-
-          echo "⏭️ Skipping execution - outside business hours"
-
-          echo "Business hours: Monday-Friday 08:00-17:00 Bangkok time"
-
-          echo "Scheduled every 2 hours: 08:00, 10:00, 12:00, 14:00, 16:00"
-
-          
-
-      - name: Clean up credentials
-
-        if: always()
-
-        run: |
-
-          rm -f credentials.json
-
-          echo "🧹 Credentials cleaned up"
-
-          
-
-      - name: Upload logs (if failed)
-
-        if: failure()
-
-        uses: actions/upload-artifact@v4
-
-        with:
-
-          name: job-fetcher-logs-${{ github.run_number }}
-
-          path: |
-
-            *.log
-
-            *.png
-
-          retention-days: 3
+  fetch-jobs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15  # จำกัดเวลาไม่ให้เกิน 15 นาที
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          
+      # ติดตั้ง Chrome for Testing + Chromedriver ที่ตรงเวอร์ชัน
+      - name: Setup Chrome
+        id: chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+          install-chromedriver: true
+          
+      - name: Show Chrome info
+        run: |
+          echo "Chrome: ${{ steps.chrome.outputs.chrome-path }}"
+          echo "Driver: ${{ steps.chrome.outputs.chromedriver-path }}"
+          ${{ steps.chrome.outputs.chrome-path }} --version
+          ${{ steps.chrome.outputs.chromedriver-path }} --version
+          
+      - name: Install system deps for headless (Ubuntu 24.04/Noble)
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends \
+            xvfb \
+            libnss3 \
+            libxss1 \
+            libgbm1 \
+            libgtk-3-0 \
+            libxshmfence1 \
+            libdrm2 \
+            libx11-6 \
+            libxcomposite1 \
+            libxdamage1 \
+            libxrandr2 \
+            libglib2.0-0 \
+            libgdk-pixbuf2.0-0 \
+            fonts-liberation \
+            xdg-utils \
+            ca-certificates \
+            libasound2t64
+            
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          
+      - name: Check timezone and current time
+        run: |
+          echo "Current UTC time: $(date -u)"
+          echo "Bangkok time (GMT+7): $(TZ='Asia/Bangkok' date)"
+          echo "Current hour in Bangkok: $(TZ='Asia/Bangkok' date +'%H')"
+          
+      - name: Verify business hours
+        run: |
+          CURRENT_HOUR=$(TZ='Asia/Bangkok' date +'%H')
+          CURRENT_DOW=$(TZ='Asia/Bangkok' date +'%u')  # 1=Monday, 7=Sunday
+          
+          echo "Bangkok hour: $CURRENT_HOUR, Day of week: $CURRENT_DOW"
+          
+          if [ $CURRENT_DOW -ge 1 ] && [ $CURRENT_DOW -le 5 ]; then
+            if [ $CURRENT_HOUR -ge 8 ] && [ $CURRENT_HOUR -lt 17 ]; then
+              echo "✅ Within business hours (Mon-Fri 08:00-17:00 Bangkok time)"
+              echo "SHOULD_RUN=true" >> $GITHUB_ENV
+            else
+              echo "⏰ Outside business hours"
+              echo "SHOULD_RUN=false" >> $GITHUB_ENV
+            fi
+          else
+            echo "📅 Weekend - not running"
+            echo "SHOULD_RUN=false" >> $GITHUB_ENV
+          fi
+          
+      - name: Create Google Service Account credentials (raw JSON)
+        if: env.SHOULD_RUN == 'true'
+        run: |
+          printf '%s' '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > credentials.json
+          python - <<'PY'
+          import json, pathlib, sys
+          p = pathlib.Path("credentials.json")
+          data = p.read_text(encoding="utf-8")
+          try:
+              json.loads(data)
+          except Exception as e:
+              sys.exit(f"credentials.json is not valid JSON: {e}")
+          print("✅ credentials.json written and valid")
+          PY
+          
+      - name: Run job fetcher
+        if: env.SHOULD_RUN == 'true'
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+          CHROMEDRIVER: ${{ steps.chrome.outputs.chromedriver-path }}
+          # ใช้ค่า default หากไม่ได้ตั้ง secrets
+          GOOGLE_SHEET_KEY: ${{ secrets.GOOGLE_SHEET_KEY || '1uEbsT3PZ8tdwiU1Xga_hS6uPve2H74xD5wUci0EcT0Q' }}
+          GOOGLE_SHEET_NAME: ${{ secrets.GOOGLE_SHEET_NAME || 'ชีต1' }}
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL || 'https://docs.google.com/spreadsheets/d/1uEbsT3PZ8tdwiU1Xga_hS6uPve2H74xD5wUci0EcT0Q/edit#gid=0' }}
+          WORKER_PUSH_URL: ${{ secrets.WORKER_PUSH_URL }}
+          LINE_TO: ${{ secrets.LINE_TO }}
+        run: |
+          echo "🚀 Starting job fetcher at $(TZ='Asia/Bangkok' date)"
+          python job_fetcher.py
+          echo "✅ Job fetcher completed at $(TZ='Asia/Bangkok' date)"
+          
+      - name: Skip execution (outside business hours)
+        if: env.SHOULD_RUN == 'false'
+        run: |
+          echo "⏭️ Skipping execution - outside business hours"
+          echo "Business hours: Monday-Friday 08:00-17:00 Bangkok time"
+          echo "Scheduled every 2 hours: 08:00, 10:00, 12:00, 14:00, 16:00"
+          
+      - name: Clean up credentials
+        if: always()
+        run: |
+          rm -f credentials.json
+          echo "🧹 Credentials cleaned up"
+          
+      - name: Upload logs (if failed)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: job-fetcher-logs-${{ github.run_number }}
+          path: |
+            *.log
+            *.png
+          retention-days: 3
