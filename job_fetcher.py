@@ -15,12 +15,14 @@ from bs4 import BeautifulSoup
 import gspread
 import shutil
 import subprocess
+import re
 
 # Configuration
 GOOGLE_SHEET_URL = os.getenv('GOOGLE_SHEET_URL', 'https://docs.google.com/spreadsheets/d/1uEbsT3PZ8tdwiU1Xga_hS6uPve2H74xD5wUci0EcT0Q/edit?gid=0#gid=0')
 GOOGLE_SHEET_NAME = os.getenv('GOOGLE_SHEET_NAME', 'ชีต1')
 USERNAME = "01000566"
 PASSWORD = "01000566"
+JOBNO_PAT = re.compile(r"No\d+-\d+")  # จับ No68-0033, No123-4567 ฯลฯ (มีอักษรไทยค้ำหน้าก็เจอ)
 
 def fetch_jobs_by_tab(driver, tab):
     """
@@ -66,6 +68,31 @@ def parse_row(row):
     except Exception as e:
         print(f"⚠️ Error parsing row: {e}")
         return None
+def parse_row_by_tab(row, tab: int):
+    """
+    คืน list 7 ช่องเหมือน parse_row() แต่:
+    - tab=16: ดักกรณีคอลัมน์ 'Job No.' กับ 'เรื่องที่แจ้ง' สลับกัน แล้วสลับกลับให้
+               และทำความสะอาด Job No สำหรับ 'แสดง' (ตัดหลัง '/')
+    """
+    cols = row.find_elements(By.TAG_NAME, "td")
+    if len(cols) < 8:
+        return None
+    # ค่าดิบตามหน้าเว็บ (ข้ามคอลัมน์ลำดับ)
+    raw = [clean_html(cols[i]) for i in range(1, 8)]
+
+    if tab == 16:
+        # โดยปกติ raw[0] = Job No., raw[1] = เรื่องที่แจ้ง
+        # แต่หน้าเว็บบางครั้งสลับกัน: ตรวจด้วย regex ถ้าเจอ jobno อยู่ที่ raw[1] แต่ไม่อยู่ raw[0] -> สลับกลับ
+        has_job0 = bool(JOBNO_PAT.search(raw[0]))
+        has_job1 = bool(JOBNO_PAT.search(raw[1]))
+        if (not has_job0) and has_job1:
+            raw[0], raw[1] = raw[1], raw[0]  # สลับกลับ
+
+        # ทำความสะอาด Job No สำหรับ 'แสดง' (คงรูปเดิมแค่ตัดหลัง '/')
+        raw[0] = clean_job_no_display(raw[0])
+
+    return raw
+
 
 def normalize_job_no(job_no: str) -> str:
     if not job_no:
@@ -384,9 +411,19 @@ def setup_google_sheets():
 
 
 def update_google_sheets(sheet, new_jobs, closed_job_nos,
-                         waiting_jobs=None, closed_jobs_full=None):
+                         waiting_jobs=None, closed_jobs_full=None,
+                         closed_already_jobs=None):  # ⬅️ เพิ่ม param สำหรับ tab=16
+    """
+    - tab=13 : ถ้ายังไม่เจอ -> เพิ่ม พร้อมสถานะ 'รอแจ้ง' หรือ 'ปิดงาน' (ถ้าอยู่ใน closed_job_nos)
+               ถ้าเจอแล้วและยังไม่ปิด -> อัปเดตสถานะเป็น 'ปิดงาน'
+    - tab=14 : ถ้ายังไม่เจอ -> เพิ่ม พร้อมสถานะ 'รอแจ้ง'
+    - tab=15 : ถ้ายังไม่เจอ -> เพิ่ม (ปรับคอลัมน์: C ว่าง + shift ขวา 1) พร้อมสถานะ 'ปิดงาน'
+               ถ้าเจอแล้วและยังไม่ปิด -> อัปเดตสถานะเป็น 'ปิดงาน'
+    - tab=16 : ถ้ายังไม่เจอ -> เพิ่ม พร้อมสถานะ 'งานที่ปิดแล้ว' (ไม่แก้รายการเดิม)
+    """
     waiting_jobs = waiting_jobs or []
     closed_jobs_full = closed_jobs_full or []
+    closed_already_jobs = closed_already_jobs or []  # ⬅️ tab=16
 
     try:
         print("✏️ Updating Google Sheets...")
@@ -396,7 +433,7 @@ def update_google_sheets(sheet, new_jobs, closed_job_nos,
             sheet.append_row(headers)
             sheet_data = [headers]
 
-        # ทำดัชนีข้อมูลเดิมในชีต
+        # ทำดัชนีข้อมูลเดิมในชีต (ใช้ compare แบบ normalize)
         existing = set()
         for row in sheet_data[1:]:
             if row and len(row) > 0:
@@ -479,11 +516,28 @@ def update_google_sheets(sheet, new_jobs, closed_job_nos,
                 except Exception as e:
                     print(f"❌ Error updating existing job {job_no} from tab15: {e}")
 
+        # ====== tab=16 (งานที่ปิดแล้ว) ======
+        for job in closed_already_jobs:
+            if not job or len(job) < 7:
+                continue
+            job_no = normalize_job_no(job[0])  # parser ของ tab=16 ตัด '/' แล้วใน display
+            if job_no not in existing:
+                try:
+                    print("DEBUG (tab16) ->", job + ["งานที่ปิดแล้ว"])
+                    sheet.append_row(job + ["งานที่ปิดแล้ว"], value_input_option="USER_ENTERED")
+                    print(f"✅ Added (tab16): {job_no} -> งานที่ปิดแล้ว")
+                    new_added += 1
+                    existing.add(job_no)
+                    time.sleep(0.5)
+                except Exception as e:
+                    print(f"❌ Error adding job {job_no} from tab16: {e}")
+
         print(f"📊 Summary: {new_added} new rows added, {updated} rows updated")
         return {"new_added": new_added, "updated": updated}
     except Exception as e:
         print(f"❌ Error updating Google Sheets: {e}")
         return {"new_added": 0, "updated": 0, "error": str(e)}
+
 
 def main():
     print(f"🚀 Starting job fetch process at {datetime.now()}")
@@ -493,6 +547,8 @@ def main():
 
         if not login_to_system(driver):
             raise Exception("Login failed")
+
+        closed_already_jobs = fetch_jobs_by_tab(driver, 16)  # ⬅️ ใหม่: งานที่ปิดแล้ว
 
         # ของเดิม
         new_jobs = fetch_new_jobs(driver)            # tab=13 (เดิม)
@@ -508,7 +564,8 @@ def main():
             new_jobs=new_jobs,
             closed_job_nos=closed_job_nos,
             waiting_jobs=waiting_jobs,
-            closed_jobs_full=closed_jobs_full
+            closed_jobs_full=closed_jobs_full,
+            closed_already_jobs=closed_already_jobs  # ⬅️ ใหม่
         )
 
         print("✅ Process completed successfully!")
