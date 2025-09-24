@@ -74,6 +74,18 @@ def fetch_jobs_by_tab(driver, tab):
         print(f"❌ Error fetching tab={tab}: {e}")
         return []
 
+INTERNAL_CENTER = "ศูนย์บริหารงานบำรุงรักษากลาง"
+
+def adjust_internal_centers(job: list) -> list:
+    """ใช้กับงานภายในศูนย์: บังคับให้ C=ศูนย์แจ้ง, D=ศูนย์ที่รับ = INTERNAL_CENTER"""
+    arr = (job or [])[:]
+    while len(arr) < 7:
+        arr.append("")
+    arr[2] = INTERNAL_CENTER  # C = ศูนย์ที่แจ้ง
+    arr[3] = INTERNAL_CENTER  # D = ศูนย์ที่รับ
+    return arr
+
+
 
 def clean_html(cell):
     try:
@@ -450,19 +462,28 @@ def setup_google_sheets():
 
 def update_google_sheets(sheet, new_jobs, closed_job_nos,
                          waiting_jobs=None, closed_jobs_full=None,
-                         closed_already_jobs=None):  # ⬅️ เพิ่ม param สำหรับ tab=16
+                         closed_already_jobs=None,              # tab=16
+                         internal_new_jobs=None,                # tab=18,7  -> รอแจ้ง
+                         internal_closed_full=None,             # tab=11    -> ปิดงาน
+                         internal_closed_already=None):         # tab=20    -> งานที่ปิดแล้ว
     """
-    - tab=13 : ถ้ายังไม่เจอ -> เพิ่ม พร้อมสถานะ 'รอแจ้ง' หรือ 'ปิดงาน' (ถ้าอยู่ใน closed_job_nos)
-               ถ้าเจอแล้วและยังไม่ปิด -> อัปเดตสถานะเป็น 'ปิดงาน'
-    - tab=14 : ถ้ายังไม่เจอ -> เพิ่ม พร้อมสถานะ 'รอแจ้ง'
-    - tab=15 : ถ้ายังไม่เจอ -> เพิ่ม (ปรับคอลัมน์: C ว่าง + shift ขวา 1) พร้อมสถานะ 'ปิดงาน'
-               ถ้าเจอแล้วและยังไม่ปิด -> อัปเดตสถานะเป็น 'ปิดงาน'
-    - tab=16 : ถ้ายังไม่เจอ -> เพิ่ม (คอลัมน์ C เว้นว่าง + shift ขวา) พร้อมสถานะ 'งานที่ปิดแล้ว'
-               ดักกรณี Job No กับ เรื่องที่แจ้งสลับกัน แล้วสลับกลับให้
+    เดิม:
+    - tab=13 : เพิ่ม 'รอแจ้ง' หรือ 'ปิดงาน' (ถ้าอยู่ใน closed_job_nos); ถ้าเจอแล้วอัปเดตเป็น 'ปิดงาน'
+    - tab=14 : เพิ่ม 'รอแจ้ง'
+    - tab=15 : เพิ่ม (C ว่าง + shift ขวา) เป็น 'ปิดงาน'; ถ้าเจอแล้วอัปเดตเป็น 'ปิดงาน'
+    - tab=16 : เพิ่ม (C ว่าง + shift ขวา) เป็น 'งานที่ปิดแล้ว'; ดักสลับ Job No/เรื่องที่แจ้ง
+
+    ใหม่ (งานภายในศูนย์):
+    - tab=18,7 : ถ้ายังไม่เจอ -> เพิ่ม พร้อมสถานะ 'รอแจ้ง' และบังคับ C,D = INTERNAL_CENTER
+    - tab=11   : ถ้ายังไม่เจอ -> เพิ่ม พร้อมสถานะ 'ปิดงาน'; ถ้าเจอแล้วและยังไม่ปิด -> อัปเดตเป็น 'ปิดงาน'
+    - tab=20   : ถ้ายังไม่เจอ -> เพิ่ม พร้อมสถานะ 'งานที่ปิดแล้ว'
     """
     waiting_jobs = waiting_jobs or []
     closed_jobs_full = closed_jobs_full or []
     closed_already_jobs = closed_already_jobs or []  # ⬅️ tab=16
+    internal_new_jobs = internal_new_jobs or []
+    internal_closed_full = internal_closed_full or []
+    internal_closed_already = internal_closed_already or []
 
     try:
         print("✏️ Updating Google Sheets...")
@@ -584,6 +605,67 @@ def update_google_sheets(sheet, new_jobs, closed_job_nos,
                 except Exception as e:
                     print(f"❌ Error adding job {job_no} from tab16: {e}")
 
+            # ====== (ใหม่) tab=18,7 งานใหม่ภายในศูนย์ -> รอแจ้ง ======
+        for job in internal_new_jobs:
+            if not job or len(job) < 7:
+                continue
+            job_no = normalize_job_no(job[0])
+            row_for_sheet = adjust_internal_centers(job)  # บังคับ C,D = INTERNAL_CENTER
+            if job_no not in existing:
+                try:
+                    sheet.append_row(row_for_sheet + ["รอแจ้ง"], value_input_option="USER_ENTERED")
+                    print(f"✅ Added (tab18/7 internal): {job_no} -> รอแจ้ง")
+                    new_added += 1
+                    existing.add(job_no)
+                    time.sleep(0.5)
+                except Exception as e:
+                    print(f"❌ Error adding internal-new {job_no}: {e}")
+
+        # ====== (ใหม่) tab=11 ปิดงานภายในศูนย์ -> ปิดงาน ======
+        for job in internal_closed_full:
+            if not job or len(job) < 7:
+                continue
+            job_no = normalize_job_no(job[0])
+            row_for_sheet = adjust_internal_centers(job)
+            if job_no not in existing:
+                try:
+                    sheet.append_row(row_for_sheet + ["ปิดงาน"], value_input_option="USER_ENTERED")
+                    print(f"✅ Added (tab11 internal): {job_no} -> ปิดงาน")
+                    new_added += 1
+                    existing.add(job_no)
+                    time.sleep(0.5)
+                except Exception as e:
+                    print(f"❌ Error adding internal-closed {job_no}: {e}")
+            else:
+                try:
+                    for i, row in enumerate(sheet_data[1:], start=2):
+                        if row and len(row) > 0 and normalize_job_no(row[0]) == job_no:
+                            if len(row) < 8 or row[7] != "ปิดงาน":
+                                sheet.update_cell(i, 8, "ปิดงาน")
+                                print(f"🔒 Updated status (tab11 internal): {job_no}")
+                                updated += 1
+                                time.sleep(0.5)
+                            break
+                except Exception as e:
+                    print(f"❌ Error updating internal-closed {job_no}: {e}")
+
+        # ====== (ใหม่) tab=20 งานที่ปิดแล้ว (ภายในศูนย์) -> งานที่ปิดแล้ว ======
+        for job in internal_closed_already:
+            if not job or len(job) < 7:
+                continue
+            job_no = normalize_job_no(job[0])
+            row_for_sheet = adjust_internal_centers(job)
+            if job_no not in existing:
+                try:
+                    sheet.append_row(row_for_sheet + ["งานที่ปิดแล้ว"], value_input_option="USER_ENTERED")
+                    print(f"✅ Added (tab20 internal): {job_no} -> งานที่ปิดแล้ว")
+                    new_added += 1
+                    existing.add(job_no)
+                    time.sleep(0.5)
+                except Exception as e:
+                    print(f"❌ Error adding internal-closed-already {job_no}: {e}")
+
+
         print(f"📊 Summary: {new_added} new rows added, {updated} rows updated")
         return {"new_added": new_added, "updated": updated}
     except Exception as e:
@@ -598,6 +680,16 @@ def main():
 
         if not login_to_system(driver):
             raise Exception("Login failed")
+
+        # งานใหม่ภายในศูนย์
+        internal_new_18 = fetch_jobs_by_tab(driver, 18)
+        internal_new_7  = fetch_jobs_by_tab(driver, 7)
+        internal_new_jobs = (internal_new_18 or []) + (internal_new_7 or [])
+        
+        # ปิดงานภายในศูนย์
+        internal_closed_full = fetch_jobs_by_tab(driver, 11)
+        # งานที่ปิดแล้ว (ภายในศูนย์)
+        internal_closed_already = fetch_jobs_by_tab(driver, 20)
 
         closed_already_jobs = fetch_jobs_by_tab(driver, 16)  # ⬅️ ใหม่: งานที่ปิดแล้ว
 
@@ -614,9 +706,12 @@ def main():
             sheet,
             new_jobs=new_jobs,
             closed_job_nos=closed_job_nos,
-            waiting_jobs=waiting_jobs,
-            closed_jobs_full=closed_jobs_full,
-            closed_already_jobs=closed_already_jobs  # ⬅️ ใหม่
+        waiting_jobs=waiting_jobs,
+        closed_jobs_full=closed_jobs_full,
+        # ⬇️ เพิ่ม 3 ตัวนี้
+        internal_new_jobs=internal_new_jobs,
+        internal_closed_full=internal_closed_full,
+        internal_closed_already=internal_closed_already,
         )
 
         print("✅ Process completed successfully!")
