@@ -677,45 +677,92 @@ def main():
     driver = None
     try:
         driver = setup_driver()
-
         if not login_to_system(driver):
             raise Exception("Login failed")
 
-        # งานใหม่ภายในศูนย์
+        # งานใหม่ภายในศูนย์ (tab 18, 7)
         internal_new_18 = fetch_jobs_by_tab(driver, 18)
-        internal_new_7  = fetch_jobs_by_tab(driver, 7)
-        internal_new_jobs = (internal_new_18 or []) + (internal_new_7 or [])
+        internal_new_7 = fetch_jobs_by_tab(driver, 7)
         
-        # ปิดงานภายในศูนย์
-        internal_closed_full = fetch_jobs_by_tab(driver, 11)
-        # งานที่ปิดแล้ว (ภายในศูนย์)
-        internal_closed_already = fetch_jobs_by_tab(driver, 20)
+        # รวมข้อมูล internal_new_jobs และกรองข้อมูลว่าง
+        internal_new_combined = []
+        for job_list in [internal_new_18, internal_new_7]:
+            if job_list:  # ตรวจสอบว่ามีข้อมูลจริง
+                for job in job_list:
+                    if job and any(str(cell).strip() for cell in job[:7]):  # ตรวจสอบว่ามีข้อมูลในช่องใดช่องหนึ่ง
+                        internal_new_combined.append(job)
+        
+        internal_new_jobs = internal_new_combined if internal_new_combined else None
+        
+        # ปิดงานภายในศูนย์ (tab 11)
+        internal_closed_raw = fetch_jobs_by_tab(driver, 11)
+        internal_closed_full = None
+        if internal_closed_raw:
+            filtered_closed = [job for job in internal_closed_raw 
+                             if job and any(str(cell).strip() for cell in job[:7])]
+            internal_closed_full = filtered_closed if filtered_closed else None
+        
+        # งานที่ปิดแล้ว ภายในศูนย์ (tab 20)
+        internal_closed_already_raw = fetch_jobs_by_tab(driver, 20)
+        internal_closed_already = None
+        if internal_closed_already_raw:
+            filtered_already = [job for job in internal_closed_already_raw 
+                              if job and any(str(cell).strip() for cell in job[:7])]
+            internal_closed_already = filtered_already if filtered_already else None
 
-        closed_already_jobs = fetch_jobs_by_tab(driver, 16)  # ⬅️ ใหม่: งานที่ปิดแล้ว
+        # งานที่ปิดแล้ว (tab 16)
+        closed_already_raw = fetch_jobs_by_tab(driver, 16)
+        closed_already_jobs = None
+        if closed_already_raw:
+            filtered_16 = [job for job in closed_already_raw 
+                          if job and any(str(cell).strip() for cell in job[:7])]
+            closed_already_jobs = filtered_16 if filtered_16 else None
 
-        # ของเดิม
-        new_jobs = fetch_new_jobs(driver)            # tab=13 (เดิม)
-        closed_job_nos = fetch_closed_jobs(driver)   # tab=15 (set of job_no for update status)
+        # ของเดิม (tab 13, 14, 15)
+        new_jobs = fetch_new_jobs(driver)  # tab=13
+        closed_job_nos = fetch_closed_jobs(driver)  # tab=15 (set of job_no for update status)
+        
+        # ดึงข้อมูลเต็มจาก tab=14 และ tab=15
+        waiting_jobs_raw = fetch_jobs_by_tab(driver, 14)
+        waiting_jobs = None
+        if waiting_jobs_raw:
+            filtered_waiting = [job for job in waiting_jobs_raw 
+                              if job and any(str(cell).strip() for cell in job[:7])]
+            waiting_jobs = filtered_waiting if filtered_waiting else None
+            
+        closed_jobs_full_raw = fetch_jobs_by_tab(driver, 15)
+        closed_jobs_full = None
+        if closed_jobs_full_raw:
+            filtered_closed_full = [job for job in closed_jobs_full_raw 
+                                  if job and any(str(cell).strip() for cell in job[:7])]
+            closed_jobs_full = filtered_closed_full if filtered_closed_full else None
 
-        # ใหม่: ดึงข้อมูลเต็มจาก tab=14 และ tab=15 (เพื่อ 'เติมแถว' ถ้ายังไม่เคยมี)
-        waiting_jobs = fetch_jobs_by_tab(driver, 14)  # เพิ่มใหม่ถ้าไม่พบ → สถานะ 'รอแจ้ง'
-        closed_jobs_full = fetch_jobs_by_tab(driver, 15)  # เพิ่มใหม่ถ้าไม่พบ → สถานะ 'ปิดงาน'
+        # Debug output
+        print(f"📊 Data summary:")
+        print(f"   - New jobs (tab13): {len(new_jobs) if new_jobs else 0}")
+        print(f"   - Waiting jobs (tab14): {len(waiting_jobs) if waiting_jobs else 0}")
+        print(f"   - Closed jobs full (tab15): {len(closed_jobs_full) if closed_jobs_full else 0}")
+        print(f"   - Closed already jobs (tab16): {len(closed_already_jobs) if closed_already_jobs else 0}")
+        print(f"   - Internal new jobs (tab18,7): {len(internal_new_jobs) if internal_new_jobs else 0}")
+        print(f"   - Internal closed full (tab11): {len(internal_closed_full) if internal_closed_full else 0}")
+        print(f"   - Internal closed already (tab20): {len(internal_closed_already) if internal_closed_already else 0}")
 
         sheet = setup_google_sheets()
         result = update_google_sheets(
-            sheet,
+            sheet, 
             new_jobs=new_jobs,
             closed_job_nos=closed_job_nos,
-        waiting_jobs=waiting_jobs,
-        closed_jobs_full=closed_jobs_full,
-        # ⬇️ เพิ่ม 3 ตัวนี้
-        internal_new_jobs=internal_new_jobs,
-        internal_closed_full=internal_closed_full,
-        internal_closed_already=internal_closed_already,
+            waiting_jobs=waiting_jobs,
+            closed_jobs_full=closed_jobs_full,
+            closed_already_jobs=closed_already_jobs,  # เพิ่มการส่ง tab16
+            internal_new_jobs=internal_new_jobs,
+            internal_closed_full=internal_closed_full,
+            internal_closed_already=internal_closed_already,
         )
-
+        
         print("✅ Process completed successfully!")
         print(f"📊 Results: {result}")
+        
     except Exception as e:
         print(f"❌ Process failed: {e}")
         exit(1)
