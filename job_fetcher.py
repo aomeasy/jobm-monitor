@@ -72,6 +72,12 @@ def normalize_job_no(job_no: str) -> str:
         return ""
     return job_no.split("/")[0].strip().lower()
 
+def clean_job_no_display(s: str) -> str:
+    if not s:
+        return ""
+    return s.split("/")[0].strip()
+
+
 def adjust_cols_for_sheet(job: list) -> list:
     """
     ใช้กับข้อมูลจาก tab=15 เท่านั้น
