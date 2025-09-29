@@ -591,17 +591,16 @@ def update_google_sheets(sheet, new_jobs, closed_job_nos,
             if not job or len(job) < 7:
                 continue
 
-            # ถ้า job[0] ไม่ใช่ Job No แต่ job[1] เป็น -> สลับ
-            has0 = bool(jobno_re.search(job[0] or ""))
-            has1 = bool(jobno_re.search(job[1] or ""))
+            # ✅ เปลี่ยนจาก jobno_re.search() เป็น looks_like_jobno()
+            has0 = looks_like_jobno(job[0] or "")
+            has1 = looks_like_jobno(job[1] or "")
+            
             if (not has0) and has1:
                 job[0], job[1] = job[1], job[0]
-
+        
             job_no = normalize_job_no(job[0])
-
-            # ใช้กติกาเหมือน tab=15: คอลัมน์ C เว้นว่าง + shift ขวา
             job_for_sheet = adjust_cols_for_sheet(job)
-
+        
             if job_no not in existing:
                 try:
                     print("DEBUG (tab16) ->", job_for_sheet + ["งานที่ปิดแล้ว"])
@@ -612,9 +611,8 @@ def update_google_sheets(sheet, new_jobs, closed_job_nos,
                     time.sleep(0.5)
                 except Exception as e:
                     print(f"❌ Error adding job {job_no} from tab16: {e}")
-            # ⬇️⬇️⬇️ เพิ่มส่วนนี้ ⬇️⬇️⬇️
             else:
-                # ถ้าเจอแล้วและสถานะเป็น "ปิดงาน" ให้เปลี่ยนเป็น "งานที่ปิดแล้ว"
+                # เพิ่มส่วนนี้เพื่อ update สถานะ "ปิดงาน" -> "งานที่ปิดแล้ว"
                 try:
                     for i, row in enumerate(sheet_data[1:], start=2):
                         if row and len(row) > 0 and normalize_job_no(row[0]) == job_no:
