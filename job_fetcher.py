@@ -586,7 +586,7 @@ def update_google_sheets(sheet, new_jobs, closed_job_nos,
 
         # ====== tab=16 (งานที่ปิดแล้ว) ======
         # ดักกรณี Job No กับ เรื่องที่แจ้งสลับกัน -> สลับกลับ
-        jobno_re = re.compile(r"No\d+-\d+")
+        
         for job in closed_already_jobs:
             if not job or len(job) < 7:
                 continue
