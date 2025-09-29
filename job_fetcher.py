@@ -18,10 +18,10 @@ import subprocess
 import re
 
 # Configuration
-GOOGLE_SHEET_URL = os.getenv('GOOGLE_SHEET_URL', 'https://docs.google.com/spreadsheets/d/1uEbsT3PZ8tdwiU1Xga_hS6uPve2H74xD5wUci0EcT0Q/edit?gid=0#gid=0')
+GOOGLE_SHEET_URL = os.getenv('GOOGLE_SHEET_URL')
 GOOGLE_SHEET_NAME = os.getenv('GOOGLE_SHEET_NAME', 'ชีต1')
-USERNAME = "01000566"
-PASSWORD = "01000566"
+USERNAME = os.getenv('USERNAME')
+PASSWORD = os.getenv('PASSWORD')
 
 JOBNO_PAT = re.compile(r"No\d+(?:-\d+)?", re.IGNORECASE)
 
