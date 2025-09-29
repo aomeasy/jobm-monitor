@@ -612,6 +612,20 @@ def update_google_sheets(sheet, new_jobs, closed_job_nos,
                     time.sleep(0.5)
                 except Exception as e:
                     print(f"❌ Error adding job {job_no} from tab16: {e}")
+            # ⬇️⬇️⬇️ เพิ่มส่วนนี้ ⬇️⬇️⬇️
+            else:
+                # ถ้าเจอแล้วและสถานะเป็น "ปิดงาน" ให้เปลี่ยนเป็น "งานที่ปิดแล้ว"
+                try:
+                    for i, row in enumerate(sheet_data[1:], start=2):
+                        if row and len(row) > 0 and normalize_job_no(row[0]) == job_no:
+                            if len(row) >= 8 and row[7] == "ปิดงาน":
+                                sheet.update_cell(i, 8, "งานที่ปิดแล้ว")
+                                print(f"🔄 Updated status (tab16): {job_no} ปิดงาน -> งานที่ปิดแล้ว")
+                                updated += 1
+                                time.sleep(0.5)
+                            break
+                except Exception as e:
+                    print(f"❌ Error updating job {job_no} from tab16: {e}")
 
             # ====== (ใหม่) tab=18,7 งานใหม่ภายในศูนย์ -> รอแจ้ง ======
         for job in internal_new_jobs:
