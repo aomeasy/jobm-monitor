@@ -699,38 +699,12 @@ def require_env(name: str) -> str:
     
 def main():
     print(f"🚀 Starting job fetch process at {datetime.now()}")
-    
-    required = ["GOOGLE_SHEET_NAME", "USERNAME", "PASSWORD"]
-    # ถ้าใช้ key แทน url ให้บังคับอย่างน้อย 1 ตัว
-    if not (os.getenv("GOOGLE_SHEET_KEY") or os.getenv("GOOGLE_SHEET_URL")):
-        raise RuntimeError("Either GOOGLE_SHEET_KEY or GOOGLE_SHEET_URL must be set.")
-    for k in required:
-        require_env(k)
-
     driver = None
     try:
         driver = setup_driver()
         if not login_to_system(driver):
             raise Exception("Login failed")
             
-    driver = None
-    try:
-        driver = setup_driver()
-        if not login_to_system(driver):
-            raise Exception("Login failed")
-            
-        # ฟังก์ชันกรองข้อมูล internal ที่ขึ้นต้นด้วย "บบลนป" เท่านั้น
-        def filter_internal_jobs(job_list):
-            if not job_list:
-                return None
-            filtered = []
-            for job in job_list:
-                if job and len(job) > 0:
-                    job_no = str(job[0]).strip() if job[0] else ""
-                    if job_no.startswith("บบลนป"):
-                        filtered.append(job)
-            return filtered if filtered else None
-        
         # ฟังก์ชันช่วยตรวจสอบว่ามีข้อมูลจริงหรือไม่ (สำหรับ regular jobs)
         def has_valid_data(job_list):
             if not job_list:
