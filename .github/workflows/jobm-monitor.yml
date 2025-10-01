@@ -122,6 +122,8 @@ jobs:
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL || 'https://docs.google.com/spreadsheets/d/1uEbsT3PZ8tdwiU1Xga_hS6uPve2H74xD5wUci0EcT0Q/edit#gid=0' }}
           WORKER_PUSH_URL: ${{ secrets.WORKER_PUSH_URL }}
           LINE_TO: ${{ secrets.LINE_TO }}
+          USERNAME: ${{ secrets.JOBM_USERNAME }}
+          PASSWORD: ${{ secrets.JOBM_PASSWORD }}
         run: |
           echo "🚀 Starting job fetcher at $(TZ='Asia/Bangkok' date)"
           python job_fetcher.py
