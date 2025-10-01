@@ -270,22 +270,20 @@ def setup_driver():
 def login_to_system(driver):
     try:
         print("🔐 Logging in...")
+        user = require_env("USERNAME")
+        pwd  = require_env("PASSWORD")
+
         driver.get("https://jobm.edoclite.com/jobManagement/pages/login")
+        WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.NAME, "username")))
 
-        WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.NAME, "username"))
-        )
+        driver.find_element(By.NAME, "username").clear()
+        driver.find_element(By.NAME, "username").send_keys(user)
 
-        driver.find_element(By.NAME, "username").send_keys(USERNAME)
-        driver.find_element(By.NAME, "password").send_keys(PASSWORD)
-
-        # ปุ่ม login ระบุ selector ให้แน่นขึ้น (กัน DOM เปลี่ยน)
-        # ถ้าปุ่มเป็น <button type="submit"> ให้กด submit ผ่าน form ตรง ๆ
+        driver.find_element(By.NAME, "password").clear()
+        driver.find_element(By.NAME, "password").send_keys(pwd)
         driver.find_element(By.NAME, "password").submit()
 
-        WebDriverWait(driver, 30).until(
-            EC.presence_of_element_located((By.XPATH, "//a[contains(., 'งานใหม่')]"))
-        )
+        WebDriverWait(driver, 30).until(EC.presence_of_element_located((By.XPATH, "//a[contains(., 'งานใหม่')]")))
         print("✅ Login successful")
         return True
     except Exception as e:
@@ -692,8 +690,29 @@ def update_google_sheets(sheet, new_jobs, closed_job_nos,
         print(f"❌ Error updating Google Sheets: {e}")
         return {"new_added": 0, "updated": 0, "error": str(e)}
 
+# เพิ่มฟังก์ชันตรวจ env
+def require_env(name: str) -> str:
+    val = os.getenv(name)
+    if val is None or str(val).strip() == "":
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return val
+    
 def main():
     print(f"🚀 Starting job fetch process at {datetime.now()}")
+    
+    required = ["GOOGLE_SHEET_NAME", "USERNAME", "PASSWORD"]
+    # ถ้าใช้ key แทน url ให้บังคับอย่างน้อย 1 ตัว
+    if not (os.getenv("GOOGLE_SHEET_KEY") or os.getenv("GOOGLE_SHEET_URL")):
+        raise RuntimeError("Either GOOGLE_SHEET_KEY or GOOGLE_SHEET_URL must be set.")
+    for k in required:
+        require_env(k)
+
+    driver = None
+    try:
+        driver = setup_driver()
+        if not login_to_system(driver):
+            raise Exception("Login failed")
+            
     driver = None
     try:
         driver = setup_driver()
