@@ -20,8 +20,8 @@ import re
 # Configuration
 GOOGLE_SHEET_URL = os.getenv('GOOGLE_SHEET_URL')
 GOOGLE_SHEET_NAME = os.getenv('GOOGLE_SHEET_NAME', 'ชีต1')
-USERNAME = os.getenv('USERNAME','01000566')
-PASSWORD = os.getenv('PASSWORD','01000566')
+USERNAME = os.getenv('USERNAME')
+PASSWORD = os.getenv('PASSWORD')
 
 JOBNO_PAT = re.compile(r"No\d+(?:-\d+)?", re.IGNORECASE)
 
